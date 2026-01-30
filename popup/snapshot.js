@@ -51,14 +51,14 @@
 
     if (hasCodeBlock(content)) score += 5;
     if (/[\{\}"'\w\s]*"(?:\w+)":\s*[\{\[\d"]|SELECT\s+.+\s+FROM|INSERT\s+INTO|UPDATE\s+\w+\s+SET/i.test(content)) score += 5;
-    if (/\b(?:must|never|cannot|must not|don't)\b|必须|不要|不可以/i.test(content)) score += 4;
-    if (/\b(?:goal|build|implement|create|want to|我想做|要做|实现)\b/i.test(content)) score += 4;
-    if (/\b(?:decide|decision|final|conclusion|结论|选用|确定)\b/i.test(content)) score += 3;
-    if (/\b(?:TODO|FIXME|next step|下一步|待办)\b/i.test(content)) score += 2;
+    if (/\b(?:must|never|cannot|must not|don't)\b/i.test(content)) score += 4;
+    if (/\b(?:goal|build|implement|create|want to)\b/i.test(content)) score += 4;
+    if (/\b(?:decide|decision|final|conclusion)\b/i.test(content)) score += 3;
+    if (/\b(?:TODO|FIXME|next step)\b/i.test(content)) score += 2;
     if (hasLinksPathsOrCommands(content) && score < 5) score = Math.max(score, 3);
 
-    if (/^\s*(?:ok|okay|yes|好的|明白|thanks|thank you|got it|sure|没问题)\s*[.!]?\s*$/i.test(raw) && raw.length < 80) score -= 2;
-    if (/^(?:hi|hello|hey|你好|您好)\s*[.!]?\s*$/i.test(raw) && raw.length < 60) score -= 3;
+    if (/^\s*(?:ok|okay|yes|thanks|thank you|got it|sure)\s*[.!]?\s*$/i.test(raw) && raw.length < 80) score -= 2;
+    if (/^(?:hi|hello|hey)\s*[.!]?\s*$/i.test(raw) && raw.length < 60) score -= 3;
     if (raw.length < 30 && !hasCodeBlock(content) && !hasLinksPathsOrCommands(content)) score -= 1;
 
     return Math.max(-3, Math.min(5, score));
@@ -69,8 +69,8 @@
     var raw = content.replace(/\s+/g, ' ').trim();
     if (hasCodeBlock(content) || hasLinksPathsOrCommands(content)) return false;
     if (raw.length > 120) return false;
-    if (/^(?:hi|hello|hey|thanks|thank you|ok|okay|好的|明白|你好|您好)\s*[.!]?\s*$/i.test(raw)) return true;
-    if (/^\s*(?:ok|okay|yes|好的|明白|thanks|sure|got it|没问题)\s*[.!]?\s*$/i.test(raw)) return true;
+    if (/^(?:hi|hello|hey|thanks|thank you|ok|okay)\s*[.!]?\s*$/i.test(raw)) return true;
+    if (/^\s*(?:ok|okay|yes|thanks|sure|got it)\s*[.!]?\s*$/i.test(raw)) return true;
     return false;
   }
 
@@ -78,7 +78,7 @@
     var content = (msg && msg.content_markdown) ? msg.content_markdown : '';
     var raw = content.replace(/\s+/g, ' ').trim();
     if (raw.length > 80) return false;
-    return /^\s*(?:ok|okay|好的|明白|thanks|thank you|got it|sure)\s*[.!]?\s*$/i.test(raw);
+    return /^\s*(?:ok|okay|thanks|thank you|got it|sure)\s*[.!]?\s*$/i.test(raw);
   }
 
   function alwaysKeep(msg) {
@@ -97,13 +97,13 @@
     var s = text.trim();
     var head = s.slice(0, 45);
     var preambles = [
-      /^这个问题问得[^，。！？\n]{0,20}[，。：]?\s*/,
-      /^好问题[，。：]?\s*/,
-      /^结论[：:]\s*/,
-      /^一句话结论[，。：]?\s*/,
-      /^下面我[^，。！？\n]{0,15}[，。]?\s*/,
-      /^我先给你[^，。！？\n]{0,15}[，。]?\s*/,
-      /^简单说[，。：]?\s*/
+      /^Good question[.,:]?\s*/i,
+      /^In conclusion[.,:]?\s*/i,
+      /^In short[.,:]?\s*/i,
+      /^Simply put[.,:]?\s*/i,
+      /^To sum up[.,:]\s*/i,
+      /^Let me explain[^.!?\n]{0,30}[.!?]?\s*/i,
+      /^First,?\s+[^.!?\n]{0,25}[.!?]?\s*/i
     ];
     for (var i = 0; i < preambles.length; i++) {
       var m = head.match(preambles[i]);
@@ -125,7 +125,7 @@
     if (!out) return { out: '', truncated: false };
     if (out.indexOf('```') !== -1 || /https?:\/\//.test(out)) return { out: out, truncated: false };
     if (out.length <= maxChars) return { out: out, truncated: false };
-    var rx = /[^。.!?]*[。.!?]\s*|[^\n]+\n?/g;
+    var rx = /[^.!?]*[.!?]\s*|[^\n]+\n?/g;
     var m;
     var acc = '';
     var n = 0;
@@ -144,7 +144,7 @@
    * Returns { out, truncated }.
    */
   var BULLET_MAX_LINES = 8;
-  var BULLET_KEYWORDS = /MVP|goal|must|never|cannot|决定|必须|不要|implement|fixed|finalized/i;
+  var BULLET_KEYWORDS = /MVP|goal|must|never|cannot|implement|fixed|finalized/i;
 
   function toBullets(text, maxChars) {
     if (!text || typeof text !== 'string') return { out: '', truncated: false };
@@ -177,15 +177,13 @@
   }
 
   /**
-   * Bold modal words MUST / MUST NOT / 必须 / 不要 in text.
+   * Bold modal words MUST / MUST NOT in text.
    */
   function boldModals(text) {
     if (!text || typeof text !== 'string') return text;
     return text
       .replace(/\b(must not)\b/gi, '**$1**')
-      .replace(/\b(must)\b/gi, '**$1**')
-      .replace(/(必须)/g, '**$1**')
-      .replace(/(不要)/g, '**$1**');
+      .replace(/\b(must)\b/gi, '**$1**');
   }
 
   /**
@@ -255,11 +253,11 @@
   }
 
   function isSuggestion(s) {
-    return /(?:you should|I recommend|建议|可以考虑)/i.test(s || '');
+    return /(?:you should|I recommend)/i.test(s || '');
   }
 
   function hasConfirmationSignal(s) {
-    return /(?:we decided|we will use|finalized|locked in|已确定|已经采用|现在使用|this is implemented|this is fixed)/i.test(s || '');
+    return /(?:we decided|we will use|finalized|locked in|this is implemented|this is fixed)/i.test(s || '');
   }
 
   /**
@@ -274,7 +272,7 @@
     var decisionsFromAssistantConfirmed = 0;
     var assistantSuggestionsDropped = 0;
     var distilledCount = 0;
-    var re = /[^.!?\n。？！]*(?:must|must not|never|cannot|don't|决定|结论|选用|必须|不要|we decided|we will use|finalized|locked in|已确定|已经采用|现在使用|this is implemented|this is fixed)[^.!?\n。？！]*[.!?\n。？！]?/gi;
+    var re = /[^.!?\n]*(?:must|must not|never|cannot|don't|we decided|we will use|finalized|locked in|this is implemented|this is fixed)[^.!?\n]*[.!?\n]?/gi;
     for (var i = 0; i < arr.length; i++) {
       var c = (arr[i].content_markdown || '').trim();
       var isUser = (arr[i].role || '') === 'user';
@@ -295,7 +293,7 @@
           seen[s] = true;
           decisionsFromAssistantConfirmed += 1;
         }
-        var isConstraint = /(?:must|must not|必须|不要)/i.test(s);
+        var isConstraint = /(?:must|must not)/i.test(s);
         var prefix = isConstraint ? '**Constraint**:' : '**Decision**:';
         var t = boldModals(stripMetaPreamble(s));
         var d = distillBullet(t, 180, true);
@@ -317,10 +315,10 @@
     var distilledCount = 0;
     for (var i = 0; i < arr.length; i++) {
       var c = arr[i].content_markdown || '';
-      var chunks = c.split(/(?<=[.?!\n。？！])/);
+      var chunks = c.split(/(?<=[.?!\n])/);
       for (var j = 0; j < chunks.length; j++) {
         var s = chunks[j].replace(/\s+/g, ' ').trim();
-        if (!(/\?/.test(s) || /\bTODO\b|\bFIXME\b|待办|未解决/i.test(s)) || s.length < 10 || s.length > 400) continue;
+        if (!(/\?/.test(s) || /\bTODO\b|\bFIXME\b|\bunresolved\b/i.test(s)) || s.length < 10 || s.length > 400) continue;
         if (seen[s]) continue;
         seen[s] = true;
         var d = distillBullet(s, 200, true);

@@ -6,7 +6,7 @@
 body {
   width: 380px;
   margin: 0;
-  padding: 20px;
+  padding: 14px 16px;
   font-family: 'Nunito', sans-serif;
   background: #fff;
   color: #000;
@@ -15,10 +15,10 @@ body {
 /* Header */
 .header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 20px;
+  gap: 10px;
+  margin-bottom: 12px;
 }
 
 .header-left {
@@ -45,23 +45,28 @@ body {
 }
 
 .subtitle {
-  font-size: 12px;
+  font-size: 11px;
   background: #000;
   color: #fff;
   padding: 2px 6px;
   border-radius: 4px;
   font-weight: 700;
+  text-align: center;
+  display: inline-block;
+  white-space: nowrap;
 }
 
 .carton-icon-btn {
   flex-shrink: 0;
-  width: 40px;
-  height: 40px;
+  width: 34px;
+  height: 34px;
   padding: 0;
   border: none;
   background: #f5f5f5;
   border-radius: 8px;
   cursor: pointer;
+  margin-top: -4px;
+  margin-right: -8px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -82,49 +87,44 @@ body {
 }
 
 .carton-icon {
-  width: 36px;
-  height: 36px;
+  width: 30px;
+  height: 30px;
   object-fit: contain;
 }
 
 /* Speech Bubble Status */
 .speech-bubble {
-  background: #f4f4f4;
-  border-radius: 12px;
-  padding: 10px;
-  margin-bottom: 15px;
+  margin-bottom: 10px;
   text-align: center;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
-  position: relative;
+  font-style: italic;
+  color: #666;
 }
 
-.speech-bubble::after {
-  content: '';
-  position: absolute;
-  bottom: -8px;
-  left: 30px;
-  width: 10px;
-  height: 10px;
-  background: #f4f4f4;
-  transform: rotate(45deg);
+.speech-bubble #status::before {
+  content: '"';
+}
+
+.speech-bubble #status::after {
+  content: '"';
 }
 
 /* Button group: full-width, two buttons side by side */
 .button-group {
   display: flex;
   flex-direction: row;
-  gap: 12px;
+  gap: 8px;
   width: 100%;
-  margin-bottom: 20px;
+  margin-bottom: 12px;
 }
 
 .btn {
   flex: 1;
   cursor: pointer;
   border: 2px solid #000;
-  border-radius: 12px;
-  padding: 12px;
+  border-radius: 10px;
+  padding: 8px 10px;
   text-align: left;
   transition: all 0.1s ease;
   background: #fff;
@@ -152,15 +152,15 @@ body {
 }
 
 .btn-title {
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 900;
   display: block;
 }
 
 .btn-desc {
-  font-size: 12px;
+  font-size: 11px;
   color: #666;
-  margin-top: 4px;
+  margin-top: 2px;
 }
 
 .btn.secondary {
@@ -174,7 +174,8 @@ body {
 
 /* Textarea */
 .output-container {
-  margin-bottom: 15px;
+  margin-top: 14px;
+  margin-bottom: 14px;
 }
 
 .output-container textarea,
@@ -184,7 +185,7 @@ body {
   min-height: 70px;
   border: none;
   border-radius: 8px;
-  padding: 10px;
+  padding: 8px;
   font-family: Menlo, Consolas, monospace;
   font-size: 11px;
   line-height: 1.5;
@@ -201,23 +202,58 @@ body {
   background: #ebebeb;
 }
 
+.ingredients-label {
+  font-size: 10px;
+  color: #999;
+  text-align: center;
+  margin-top: -2px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
 /* Footer Actions */
 .actions {
   display: flex;
-  gap: 10px;
+  gap: 8px;
 }
 
 .action-btn {
   flex: 1;
-  padding: 10px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 6px 10px;
+  min-height: 44px;
+  height: auto;
   border: 2px solid #000;
   border-radius: 8px;
   background: #fff;
-  font-weight: 800;
   font-family: 'Nunito', sans-serif;
   cursor: pointer;
   box-shadow: 2px 2px 0 #000;
   transition: 0.1s;
+}
+
+.btn-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.2;
+}
+
+.btn-main {
+  font-size: 15px;
+  font-weight: 900;
+  color: #000;
+}
+
+.btn-sub {
+  font-size: 10px;
+  font-weight: 600;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 2px;
 }
 
 .action-btn:hover:not(:disabled) {
@@ -234,6 +270,14 @@ body {
   color: #999;
   box-shadow: none;
   cursor: default;
+}
+
+.action-btn:disabled .btn-main {
+  color: #999;
+}
+
+.action-btn:disabled .btn-sub {
+  color: #aaa;
 }
 
 /* History Drawer */

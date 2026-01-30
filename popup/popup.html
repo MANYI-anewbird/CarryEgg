@@ -14,7 +14,7 @@
       <img src="../icons/knockout.PNG" alt="Egg Logo" class="logo" />
       <div class="title-group">
         <h1>CarryEgg</h1>
-        <span class="subtitle">Pack and carry your chat to a new window!</span>
+        <span class="subtitle">Pack your chat history as an egg to go!</span>
       </div>
     </div>
     <button id="cartonBtn" type="button" class="carton-icon-btn" title="My Carton">
@@ -23,27 +23,38 @@
   </div>
 
   <div class="speech-bubble">
-    <span id="status">Pack your chat to go, now choose your egg!</span>
+    <span id="status">Pack and carry your chat to a new window!</span>
   </div>
 
   <div class="button-group">
-    <button id="quickSnap" type="button" class="btn primary">
+    <button id="quickSnap" type="button" class="btn primary" title="Grabs last ~40 msgs to continue conversation.">
       <span class="btn-title">Quick Egg</span>
       <span class="btn-desc">Latest Context Only</span>
     </button>
-    <button id="fullSnap" type="button" class="btn secondary">
+    <button id="fullSnap" type="button" class="btn secondary" title="Deep scan of the entire history.">
       <span class="btn-title">Whole Egg</span>
       <span class="btn-desc">Deep Context Extract</span>
     </button>
   </div>
 
   <div class="output-container">
-    <textarea id="output" readonly placeholder="Waiting for the egg to hatch..."></textarea>
+    <textarea id="output" readonly placeholder="We distill your chat history into a clean, portable context, so you can pick up exactly where you left off in any new chat or AI."></textarea>
+    <div class="ingredients-label">Includes: Core Objectives · Key Decisions · Project State</div>
   </div>
 
   <div class="actions">
-    <button id="copyBtn" type="button" class="action-btn" disabled>Copy</button>
-    <button id="downloadBtn" type="button" class="action-btn" disabled>Save</button>
+    <button id="copyBtn" type="button" class="action-btn" disabled>
+      <div class="btn-content">
+        <span class="btn-main">Copy Egg</span>
+        <span class="btn-sub">Ready-to-use Prompt</span>
+      </div>
+    </button>
+    <button id="downloadBtn" type="button" class="action-btn" disabled>
+      <div class="btn-content">
+        <span class="btn-main">Save Egg</span>
+        <span class="btn-sub">As Markdown File</span>
+      </div>
+    </button>
   </div>
 
   <div class="history-drawer" id="historyDrawer">
