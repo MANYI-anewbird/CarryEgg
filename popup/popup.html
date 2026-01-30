@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CarryEgg</title>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+
+  <div class="header">
+    <img src="../icons/knockout.PNG" alt="Egg Logo" class="logo" />
+    <div class="title-group">
+      <h1>CarryEgg</h1>
+      <span class="subtitle">Carry context to a fresh chat</span>
+    </div>
+  </div>
+
+  <div class="speech-bubble">
+    <span id="status">Pack your chat to go! 🥚</span>
+  </div>
+
+  <div class="button-group">
+    <button id="quickSnap" type="button" class="btn primary">
+      <span class="btn-title">⚡ Quick Egg</span>
+      <span class="btn-desc">Latest 40 msgs</span>
+    </button>
+    <button id="fullSnap" type="button" class="btn secondary">
+      <span class="btn-title">🌪️ The Whole Egg</span>
+      <span class="btn-desc">Deep extract (Scroll)</span>
+    </button>
+  </div>
+
+  <div class="output-container">
+    <textarea id="output" readonly placeholder="Waiting for the egg to hatch..."></textarea>
+  </div>
+
+  <div class="actions">
+    <button id="copyBtn" type="button" class="action-btn" disabled>📋 Copy</button>
+    <button id="downloadBtn" type="button" class="action-btn" disabled>💾 Save</button>
+  </div>
+
+  <script src="snapshot.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

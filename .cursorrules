@@ -1,0 +1,19 @@
+# ChatGPT Snapshot — Project Rules
+
+## Chrome Extension Constraints
+
+- **Manifest V3 only**: All Chrome APIs must comply with Manifest V3. No Manifest V2.
+- **Messaging**: Use `chrome.runtime.sendMessage` for async communication between popup, content script, and service worker.
+- **Background**: No deprecated background pages. Use a service worker only.
+- **Dependencies**: No external libraries. Vanilla JS only.
+
+## Defensive Programming (Required)
+
+- **Null checks**: Always check for `null` / `undefined` before using DOM nodes or API results.
+- **Try/catch**: Wrap all DOM access and selector-based logic in `try/catch`. Log errors and continue.
+- **Selector failures**: Never crash if selectors fail. Log with `[Snapshot Debug]` prefix and degrade gracefully (e.g. empty result, skip step).
+
+## Code Style
+
+- Log critical logic with prefix: `[Snapshot Debug]`.
+- Prefer explicit, readable control flow over clever shortcuts.
