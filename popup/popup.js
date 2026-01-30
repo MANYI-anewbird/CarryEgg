@@ -18,6 +18,29 @@
   const historyDrawer = document.getElementById('historyDrawer');
   const closeDrawerBtn = document.getElementById('closeDrawer');
   const historyList = document.getElementById('historyList');
+  const progressWrap = document.getElementById('progressWrap');
+  const progressFill = document.getElementById('progressFill');
+
+  var lastSnapshotMode = null;
+
+  function showProgress() {
+    try {
+      if (progressWrap) progressWrap.classList.add('visible');
+      setProgressPercent(0);
+    } catch (_) {}
+  }
+
+  function hideProgress() {
+    try {
+      if (progressWrap) progressWrap.classList.remove('visible');
+    } catch (_) {}
+  }
+
+  function setProgressPercent(pct) {
+    try {
+      if (progressFill) progressFill.style.width = Math.min(100, Math.max(0, pct)) + '%';
+    } catch (_) {}
+  }
 
   function setStatus(text) {
     try {
@@ -151,6 +174,7 @@
       })
       .then(function (res) {
         if (!res) return;
+        lastSnapshotMode = 'quick';
         const messages = (res.messages || []).slice(-QUICK_KEEP);
         const md = buildContinuationSnapshotMarkdown(messages);
         setOutput(md);
@@ -173,6 +197,7 @@
     setOutput('');
     setButtons(false);
     setBusy(true);
+    showProgress();
 
     var fullDone = false;
     var requestId = Date.now().toString();
@@ -184,11 +209,16 @@
         if (payload.type === 'snapshotProgress' && payload.status) {
           var t = (payload.status || '').replace(/^\[Snapshot Debug\]\s*/i, '');
           setStatus(t || 'Rolling...');
+          if (payload.pass != null && payload.maxLoops && payload.maxLoops > 0) {
+            setProgressPercent((payload.pass / payload.maxLoops) * 100);
+          }
           return;
         }
         if (payload.type === 'fullSnapshotDone' && payload.result && !fullDone) {
           fullDone = true;
+          lastSnapshotMode = 'whole';
           removeListener();
+          hideProgress();
           var messages = (payload.result.messages || []);
           var md = buildContinuationSnapshotMarkdown(messages);
           setOutput(md);
@@ -208,6 +238,7 @@
 
     function teardown() {
       removeListener();
+      hideProgress();
       setBusy(false);
     }
 
@@ -226,9 +257,11 @@
       })
       .then(function (res) {
         removeListener();
+        hideProgress();
         if (fullDone) return;
         if (!res) return;
         fullDone = true;
+        lastSnapshotMode = 'whole';
         var messages = (res.messages || []);
         var md = buildContinuationSnapshotMarkdown(messages);
         setOutput(md);
@@ -259,18 +292,18 @@
   }
 
   function downloadOutput() {
-    const text = outEl ? outEl.value : '';
+    var text = outEl ? outEl.value : '';
     if (!text) return;
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = String(now.getMonth() + 1).padStart(2, '0');
-    const d = String(now.getDate()).padStart(2, '0');
-    const h = String(now.getHours()).padStart(2, '0');
-    const min = String(now.getMinutes()).padStart(2, '0');
-    const name = 'carryegg-snapshot-' + y + '-' + m + '-' + d + '-' + h + '-' + min + '.md';
-    const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    var now = new Date();
+    var y = now.getFullYear();
+    var m = String(now.getMonth() + 1).padStart(2, '0');
+    var d = String(now.getDate()).padStart(2, '0');
+    var datePart = y + '-' + m + '-' + d;
+    var mode = (lastSnapshotMode === 'quick' || lastSnapshotMode === 'whole') ? lastSnapshotMode : 'snapshot';
+    var name = 'carryegg-' + mode + '-' + datePart + '.md';
+    var blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
     a.href = url;
     a.download = name;
     a.click();

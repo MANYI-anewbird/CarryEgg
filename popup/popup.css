@@ -110,6 +110,28 @@ body {
   content: '"';
 }
 
+/* Progress bar (shown during Full Snapshot / Rolling) */
+.progress-bar-wrap {
+  display: none;
+  height: 6px;
+  background: #e8e8e8;
+  border-radius: 3px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+
+.progress-bar-wrap.visible {
+  display: block;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: #000;
+  border-radius: 3px;
+  width: 0%;
+  transition: width 0.2s ease;
+}
+
 /* Button group: full-width, two buttons side by side */
 .button-group {
   display: flex;
