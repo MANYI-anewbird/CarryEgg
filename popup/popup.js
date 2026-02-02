@@ -176,6 +176,12 @@
         if (!res) return;
         lastSnapshotMode = 'quick';
         const messages = (res.messages || []).slice(-QUICK_KEEP);
+        if (messages.length === 0) {
+          setOutput('');
+          setStatus('No content extracted. Scroll the chat to the top first, then try again.');
+          setButtons(false);
+          return;
+        }
         const md = buildContinuationSnapshotMarkdown(messages);
         setOutput(md);
         setStatus('Egg is served! (' + messages.length + ' msgs)');
@@ -220,6 +226,13 @@
           removeListener();
           hideProgress();
           var messages = (payload.result.messages || []);
+          if (messages.length === 0) {
+            setOutput('');
+            setStatus('No content extracted. Scroll the chat to the top first, then try again.');
+            setButtons(false);
+            setBusy(false);
+            return;
+          }
           var md = buildContinuationSnapshotMarkdown(messages);
           setOutput(md);
           setStatus('Egg is served! (' + messages.length + ' msgs)');
@@ -263,6 +276,13 @@
         fullDone = true;
         lastSnapshotMode = 'whole';
         var messages = (res.messages || []);
+        if (messages.length === 0) {
+          setOutput('');
+          setStatus('No content extracted. Scroll the chat to the top first, then try again.');
+          setButtons(false);
+          setBusy(false);
+          return;
+        }
         var md = buildContinuationSnapshotMarkdown(messages);
         setOutput(md);
         setStatus('Egg is served! (' + messages.length + ' msgs)');

@@ -23,7 +23,8 @@
 
   /**
    * Selector fallback strategy. Returns array of message-container elements.
-   * Order: role/aria → article → data-testid=conversation-turn → .markdown parents → heuristic.
+   * Priority: containers that GUARANTEE content first (conversation-turn, .markdown parents),
+   * then heuristic article scan, then broad role/article (which can match empty shells).
    */
   function getConversationContainers() {
     const doc = typeof document !== 'undefined' ? document : null;
@@ -35,29 +36,7 @@
     const candidates = [];
 
     try {
-      // 1) role / aria-based containers
-      const byRole = doc.querySelectorAll('[role="article"], [aria-label*="message"], [aria-label*="turn"]');
-      if (byRole && byRole.length > 0) {
-        LOG('Selector fallback: using role/aria containers, count=' + byRole.length);
-        return Array.from(byRole);
-      }
-    } catch (e) {
-      LOG('Selector fallback: role/aria failed: ' + (e && e.message));
-    }
-
-    try {
-      // 2) <article> elements
-      const articles = doc.querySelectorAll('article');
-      if (articles && articles.length > 0) {
-        LOG('Selector fallback: using article elements, count=' + articles.length);
-        return Array.from(articles);
-      }
-    } catch (e) {
-      LOG('Selector fallback: article failed: ' + (e && e.message));
-    }
-
-    try {
-      // 3) data-testid="conversation-turn"
+      // 1) data-testid="conversation-turn" — ChatGPT canonical; high confidence
       const byTestId = doc.querySelectorAll('[data-testid="conversation-turn"]');
       if (byTestId && byTestId.length > 0) {
         LOG('Selector fallback: using data-testid=conversation-turn, count=' + byTestId.length);
@@ -68,8 +47,8 @@
     }
 
     try {
-      // 4) Elements containing .markdown — closest article | data-testid | li, no class fragments
-      const markdownEls = doc.querySelectorAll('.markdown');
+      // 2) Elements containing .markdown — closest article | data-testid | li (guarantees content)
+      const markdownEls = doc.querySelectorAll('.markdown, [class*="markdown"]');
       if (markdownEls && markdownEls.length > 0) {
         const seen = new Set();
         for (const m of markdownEls) {
@@ -89,24 +68,47 @@
     }
 
     try {
-      // 5) Heuristic (last resort): article only, filter by .markdown or pre>code. No div[class] scan.
+      // 3) Heuristic: article with .markdown or pre>code inside (content-bearing)
       const main = doc.querySelector('main') || doc.querySelector('[role="main"]') || doc.body;
-      if (!main) return [];
-      const articles = main.querySelectorAll('article');
-      const HEURISTIC_CAP = 300;
-      const blocks = [];
-      for (const a of articles) {
-        if (blocks.length >= HEURISTIC_CAP) break;
-        const hasMarkdown = a.querySelector('.markdown');
-        const hasCode = a.querySelector('pre > code');
-        if (hasMarkdown || hasCode) blocks.push(a);
-      }
-      if (blocks.length > 0) {
-        LOG('Selector fallback: heuristic (article + .markdown|pre>code), count=' + blocks.length);
-        return blocks;
+      if (main) {
+        const articles = main.querySelectorAll('article');
+        const HEURISTIC_CAP = 300;
+        const blocks = [];
+        for (const a of articles) {
+          if (blocks.length >= HEURISTIC_CAP) break;
+          const hasMarkdown = a.querySelector('.markdown, [class*="markdown"]');
+          const hasCode = a.querySelector('pre > code');
+          if (hasMarkdown || hasCode) blocks.push(a);
+        }
+        if (blocks.length > 0) {
+          LOG('Selector fallback: heuristic (article + .markdown|pre>code), count=' + blocks.length);
+          return blocks;
+        }
       }
     } catch (e) {
       LOG('Selector fallback: heuristic failed: ' + (e && e.message));
+    }
+
+    try {
+      // 4) role / aria-based (can match empty wrappers; use only if above fail)
+      const byRole = doc.querySelectorAll('[role="article"], [aria-label*="message"], [aria-label*="turn"]');
+      if (byRole && byRole.length > 0) {
+        LOG('Selector fallback: using role/aria containers, count=' + byRole.length);
+        return Array.from(byRole);
+      }
+    } catch (e) {
+      LOG('Selector fallback: role/aria failed: ' + (e && e.message));
+    }
+
+    try {
+      // 5) Plain <article> as last resort
+      const articles = doc.querySelectorAll('article');
+      if (articles && articles.length > 0) {
+        LOG('Selector fallback: using article elements, count=' + articles.length);
+        return Array.from(articles);
+      }
+    } catch (e) {
+      LOG('Selector fallback: article failed: ' + (e && e.message));
     }
 
     LOG('Selector fallback: no containers found');
@@ -240,6 +242,29 @@
   }
 
   /**
+   * Find best content-bearing element inside container. Tries multiple selectors.
+   * @param {Element} container
+   * @returns {Element}
+   */
+  function findContentRoot(container) {
+    if (!container || !container.querySelector) return container;
+    const selectors = [
+      '.markdown',
+      '[class*="markdown"]',
+      '[class*="prose"]',
+      '[class*="message"]',
+      '[class*="break-words"]'
+    ];
+    for (const sel of selectors) {
+      try {
+        const el = container.querySelector(sel);
+        if (el && (el.textContent || '').trim().length > 0) return el;
+      } catch (_) {}
+    }
+    return container;
+  }
+
+  /**
    * Extract single message { role, content_markdown } from a container.
    */
   function extractMessageFromElement(container) {
@@ -254,11 +279,15 @@
     }
 
     try {
-      const contentRoot = container.querySelector('.markdown') || container;
+      const contentRoot = findContentRoot(container);
       const { chunks: codeChunks, codeNodes } = extractCodeBlocks(contentRoot);
       const nonCode = serializeToMarkdown(contentRoot, codeNodes);
       const codePart = codeChunks.join('');
       content = [nonCode, codePart].filter(Boolean).join('\n\n');
+      if (!content.trim()) {
+        const raw = (contentRoot.textContent || '').trim();
+        if (raw.length > 10) content = raw;
+      }
     } catch (e) {
       LOG('extractMessageFromElement failed: ' + (e && e.message));
     }
@@ -433,8 +462,8 @@
     for (let i = 0; i < containers.length; i++) {
       try {
         const msg = extractMessageFromElement(containers[i]);
-        if (msg.content_markdown || msg.role) {
-          messages.push({ role: msg.role, content_markdown: msg.content_markdown || '' });
+        if (msg.content_markdown && msg.content_markdown.trim().length > 0) {
+          messages.push({ role: msg.role, content_markdown: msg.content_markdown.trim() });
         }
       } catch (e) {
         LOG('extractMessage skip index ' + i + ': ' + (e && e.message));

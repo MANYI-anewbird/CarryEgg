@@ -5,7 +5,6 @@
 
 'use strict';
 
-// Optional: log extension install/update for debugging
 try {
   chrome.runtime.onInstalled.addListener(function (details) {
     if (details && details.reason) {
