@@ -187,6 +187,92 @@
   }
 
   /**
+   * Summary-only: rewrite raw text into neutral, third-party meeting-note style.
+   * Removes conversational tone, rhetorical openings, and direct assistant wording.
+   */
+  function rewriteAsNeutral(line) {
+    if (!line || typeof line !== 'string') return '';
+    var s = line
+      .replace(/^[-*]\s*(?:\*\*Decision\*\*:?\s*|\*\*Constraint\*\*:?\s*)/i, '')
+      .replace(/\s*\(see[^)]*\)\.?$/gi, '')
+      .replace(/\s*\.?\s*\.\s*\.\s*$/, '')
+      .trim();
+    var preambles = [
+      /^Good question[.,:]?\s*/i, /^In conclusion[.,:]?\s*/i, /^In short[.,:]?\s*/i,
+      /^Simply put[.,:]?\s*/i, /^To sum up[.,:]\s*/i, /^Let me explain[^.]*\.\s*/i,
+      /^First,?\s+[^.]*\.\s*/i, /^So,?\s+/i, /^We (?:decided|have|went with)\s+/i,
+      /^You (?:wanted|asked|mentioned)\s+/i, /^I (?:think|recommend|suggest)\s+/i,
+      /^As (?:you |we )?(?:mentioned|discussed),?\s*/i, /^Basically,?\s+/i
+    ];
+    for (var i = 0; i < preambles.length; i++) {
+      s = s.replace(preambles[i], '');
+    }
+    s = s.replace(/\s+/g, ' ').trim();
+    if (s.length > 200) s = s.slice(0, 197) + '…';
+    return s;
+  }
+
+  /**
+   * Summary-only: build Topic as a theme description (1–2 sentences), not a quote.
+   */
+  function summaryTopicFromGoal(goalStr) {
+    if (!goalStr || typeof goalStr !== 'string') return 'Summary of the conversation.';
+    var lines = goalStr.split('\n').map(function (l) { return l.replace(/^-\s*/, '').trim(); }).filter(Boolean);
+    if (lines.length === 0 || (lines[0] || '').indexOf('No high-signal') !== -1) return 'Summary of the conversation.';
+    var first = rewriteAsNeutral(lines[0]);
+    if (!first || first.length < 15) return 'Summary of the conversation.';
+    if (lines.length >= 2) {
+      var second = rewriteAsNeutral(lines[1]);
+      if (second && second.length >= 10) return 'This conversation focused on ' + first.slice(0, 1).toLowerCase() + first.slice(1) + '. It also covered ' + second.slice(0, 1).toLowerCase() + second.slice(1).replace(/\.$/, '') + '.';
+    }
+    return 'This conversation focused on ' + first.slice(0, 1).toLowerCase() + first.slice(1).replace(/\.$/, '') + '.';
+  }
+
+  /**
+   * Summary-only: rewrite Key Discussion Points as clear bullet insights.
+   */
+  function summaryKeyPointsFromCurrent(currentStr) {
+    if (!currentStr || typeof currentStr !== 'string') return '- (No discussion points extracted.)';
+    var lines = currentStr.split('\n').map(function (l) { return l.replace(/^[-*]\s*/, '').trim(); }).filter(Boolean).slice(0, 5);
+    if (lines.length === 0 || (lines[0] || '').indexOf('Derived from') !== -1) return '- (No discussion points extracted.)';
+    var out = lines.map(function (l) { var n = rewriteAsNeutral(l); return n ? '- ' + n : ''; }).filter(Boolean);
+    return out.length ? out.join('\n') : '- (No discussion points extracted.)';
+  }
+
+  /**
+   * Summary-only: rewrite Decisions as neutral outcomes.
+   */
+  function summaryConclusionsFromDecisions(decisionsStr) {
+    if (!decisionsStr || typeof decisionsStr !== 'string' || decisionsStr.indexOf('None extracted') !== -1) return '- (None.)';
+    var lines = decisionsStr.split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
+    var out = lines.map(function (l) { var n = rewriteAsNeutral(l); return n ? '- ' + n : ''; }).filter(Boolean);
+    return out.length ? out.join('\n') : '- (None.)';
+  }
+
+  /**
+   * Summary-only: rewrite Next Steps as neutral task list.
+   */
+  function summaryNextStepsFromActions(actionItemsStr) {
+    if (!actionItemsStr || typeof actionItemsStr !== 'string' || actionItemsStr.indexOf('None extracted') !== -1) return '';
+    var lines = actionItemsStr.split('\n').map(function (l) { return l.replace(/^-\s*/, '').trim(); }).filter(Boolean);
+    var out = lines.map(function (l) { var n = rewriteAsNeutral(l); return n ? '- ' + n : ''; }).filter(Boolean);
+    return out.join('\n');
+  }
+
+  /**
+   * Summary-only: one short background sentence, distinct from Topic.
+   */
+  function summaryContextLine(goalStr, topicStr) {
+    if (!goalStr || typeof goalStr !== 'string') return '';
+    var lines = goalStr.split('\n').map(function (l) { return l.replace(/^-\s*/, '').trim(); }).filter(Boolean);
+    if (lines.length < 2 || (lines[0] || '').indexOf('No high-signal') !== -1) return '';
+    var second = rewriteAsNeutral(lines[1]);
+    if (!second || second.length < 15) return '';
+    if (second.length > 100) second = second.slice(0, 97) + '…';
+    return 'Background: ' + second.slice(0, 1).toLowerCase() + second.slice(1).replace(/\.$/, '') + '.';
+  }
+
+  /**
    * Goal: first 20 messages, top-scoring, high-signal only. Prefer user when scores similar.
    */
   function buildGoal(messages) {
@@ -331,6 +417,29 @@
   }
 
   /**
+   * Action Items: TODO, FIXME, next-step style lines for summary mode.
+   */
+  function buildActionItems(messages) {
+    var arr = (messages || []).slice(-25);
+    var lines = [];
+    var seen = {};
+    var re = /(?:^|[\n])\s*(?:[-*]\s+)?([^\n]*(?:TODO|FIXME|next step|action item|we need to|need to\s+\w+)[^\n]{2,120})/gi;
+    for (var i = 0; i < arr.length; i++) {
+      var c = (arr[i].content_markdown || '').trim();
+      var m;
+      re.lastIndex = 0;
+      while ((m = re.exec(c)) !== null) {
+        var s = (m[1] || '').replace(/\s+/g, ' ').trim();
+        if (!s || s.length < 15 || seen[s]) continue;
+        seen[s] = true;
+        lines.push('- ' + s.slice(0, 200));
+      }
+    }
+    LOG('Action Items: ' + lines.length + ' items');
+    return lines.length ? lines.join('\n') : '- (None extracted.)';
+  }
+
+  /**
    * Important Artifacts: code blocks (verbatim, deduped), file names, commands, URLs.
    */
   function buildArtifacts(messages) {
@@ -460,9 +569,9 @@
   function buildPasteInstructions() {
     return '1. Paste the **entire** document above into a **new** chat (same or another AI tool).\n'
       + '2. Tell the AI: "Please read everything above carefully."\n'
-      + '3. Add: "The section **Immediate Continuation Context** represents the most recent live conversation. Continue from there without repeating earlier explanations."\n'
-      + '4. The AI can use Goal, Current State, Key Decisions, and Last-stage Details as reference, and **Immediate Continuation Context** for exact handoff.\n'
-      + '5. Start by answering the LAST user request/question in the Immediate Continuation Context.';
+      + '3. Add: "The section **Immediate Continuation Context** represents the most recent live conversation."\n'
+      + '4. The AI should first provide a brief (2–3 sentence) confirmation of: what the conversation is about, and current progress / where things were left off. Then briefly acknowledge it has understood the context, and end with: "We can continue from here whenever you\'re ready."\n'
+      + '5. Do NOT immediately continue with long answers or solutions. Wait for the user to continue the conversation.';
   }
 
   /**
@@ -480,53 +589,75 @@
   }
 
   /**
-   * Build full Continuation Snapshot Markdown.
+   * Build snapshot Markdown. Mode: "continue" (default) or "summary".
+   * Continue mode is optimized for minimal friction handoff.
+   * Avoid adding extra structure unless benchmark testing proves necessity.
+   *
    * @param {Array<{ role: "user"|"assistant", content_markdown: string }>} messages
+   * @param {string} [mode] - "continue" | "summary"
    * @returns {string}
    */
-  function buildContinuationSnapshotMarkdown(messages) {
+  function buildContinuationSnapshotMarkdown(messages, mode) {
     var arr = Array.isArray(messages) ? messages : [];
-    LOG('Phase 5 input: ' + arr.length + ' messages');
+    var exportMode = (mode === 'summary') ? 'summary' : 'continue';
+    LOG('Phase 5 input: ' + arr.length + ' messages, mode=' + exportMode);
 
     var goal = buildGoal(arr);
     var current = buildCurrentState(arr);
     var decisions = buildKeyDecisions(arr);
     var questions = buildOpenQuestions(arr);
     var artifacts = buildArtifacts(arr);
+
+    if (exportMode === 'summary') {
+      var actionItems = buildActionItems(arr);
+      var topic = summaryTopicFromGoal(goal);
+      var keyPoints = summaryKeyPointsFromCurrent(current);
+      var conclusions = summaryConclusionsFromDecisions(decisions);
+      var nextStepsRaw = summaryNextStepsFromActions(actionItems || '');
+      var hasNextSteps = nextStepsRaw.length > 0;
+      var contextLine = summaryContextLine(goal, topic);
+      var md = [
+        '# Conversation Summary',
+        '',
+        '## Topic',
+        topic,
+        '',
+        '## Key Discussion Points',
+        keyPoints,
+        '',
+        '## Decisions / Conclusions',
+        conclusions
+      ];
+      if (hasNextSteps) {
+        md.push('', '## Next Steps', nextStepsRaw);
+      }
+      if (contextLine) {
+        md.push('', '## Context Snapshot', contextLine);
+      }
+      md = md.join('\n');
+      LOG('Phase 5 output: summary snapshot built (human-readable)');
+      return md;
+    }
+
     var immediate = buildImmediateContinuationContext(arr);
     var lastStage = buildLastStage(arr, immediate.included);
     var paste = buildPasteInstructions();
     var raw = buildRawExtract(arr);
 
-    var gentleHeader = [
-      '# CarryEgg Continuation Context',
+    var topPart = [
+      '# === CONTINUE FROM HERE ===',
       '',
-      'You are provided with a document generated by **CarryEgg**.',
-      '',
-      'This document is a **portable continuation snapshot** of a previous conversation.',
-      'Its purpose is not to restart the discussion, but to help you smoothly pick up where things left off.',
-      '',
-      '### What this context represents',
-      '- The earlier sections summarize goals, decisions, and important artifacts.',
-      '- The **Immediate Continuation Context** contains the most recent live exchange and should be treated as the current conversational state.',
-      '- Not everything needs to be repeated or explained again.',
-      '',
-      '### How to respond (guidance, not strict rules)',
-      '- Take a moment to read and understand the context.',
-      '- A brief acknowledgment that you\'ve read it is welcome, but optional.',
-      '- Continue the conversation naturally from the current state.',
-      '- Feel free to ask a clarifying question, propose next steps, or simply move the discussion forward—whatever feels most appropriate.',
-      '- Avoid rehashing resolved points unless they become relevant again.',
-      '',
-      '> *Think of this as being handed the conversation mid-stream and gently stepping in.*',
+      immediate.md,
       '',
       '---',
+      '',
+      'Compressed background context below for continuity.',
+      '',
+      'Your first response only: (1) Give a short micro-summary in 2–3 sentences — what this conversation is about and where we left off. (2) Say you have understood and loaded the prior context. (3) End with: "We can continue from here whenever you\'re ready." Then stop. Do not automatically continue with long solutions, do not ask the user to reply "yes", and do not add confirmation steps.',
       ''
     ].join('\n');
 
-    var body = [
-      '# Continuation Snapshot',
-      '',
+    var backgroundSections = [
       '## Goal (Origin Context)',
       goal,
       '',
@@ -542,11 +673,8 @@
       '## Important Artifacts',
       artifacts,
       '',
-      '## Last-stage Details (Most Recent Context)',
+      '## Last-stage Details',
       lastStage,
-      '',
-      '## Immediate Continuation Context (DO NOT SUMMARIZE)',
-      immediate.md,
       '',
       '## Paste-into-New-Chat Instructions',
       paste,
@@ -559,10 +687,8 @@
       '</details>'
     ].join('\n');
 
-    var md = gentleHeader + body;
-
-    LOG('Phase 5 output: snapshot built');
-    LOG('Phase 5 sections: Goal, Current State, Key Decisions, Open Questions, Artifacts, Last-stage, Immediate Continuation Context, Paste instructions, Raw Extract');
+    var md = topPart + backgroundSections;
+    LOG('Phase 5 output: continue snapshot built');
     return md;
   }
 

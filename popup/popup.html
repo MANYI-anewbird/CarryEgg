@@ -23,42 +23,81 @@
   </div>
 
   <div class="speech-bubble">
-    <span id="status">Pack and carry your chat to a new window!</span>
+    <span id="status">Choose what you want:</span>
   </div>
+  <div class="toast-container" id="toastContainer" aria-live="polite" aria-atomic="true"></div>
 
   <div class="progress-bar-wrap" id="progressWrap" aria-hidden="true">
     <div class="progress-bar-fill" id="progressFill"></div>
   </div>
 
-  <div class="button-group">
-    <button id="quickSnap" type="button" class="btn primary" title="Grabs last ~40 msgs to continue conversation.">
-      <span class="btn-title">Quick Egg</span>
-      <span class="btn-desc">Latest Context Only</span>
+  <div class="button-group" role="group" aria-label="Export mode">
+    <button id="continueEgg" type="button" class="btn mode-btn selected" title="Continue this chat in a new conversation." aria-pressed="true">
+      <span class="btn-title">Continue Chat</span>
+      <span class="btn-desc">Chat feeling slow or stuck?</span>
     </button>
-    <button id="fullSnap" type="button" class="btn secondary" title="Deep scan of the entire history.">
-      <span class="btn-title">Whole Egg</span>
-      <span class="btn-desc">Deep Context Extract</span>
+    <button id="summarizeEgg" type="button" class="btn mode-btn" title="Turn your chat into a clean report." aria-pressed="false">
+      <span class="btn-title">Summarize Chat</span>
+      <span class="btn-desc">Want a clean summary?</span>
     </button>
+  </div>
+
+  <div class="start-summarize-row" id="startSummarizeRow" aria-hidden="true">
+    <button type="button" id="startSummarizeBtn" class="btn start-summarize-btn">Start summarize</button>
   </div>
 
   <div class="output-container">
-    <textarea id="output" readonly placeholder="We distill your chat history into a clean, portable context, so you can pick up exactly where you left off in any new chat or AI."></textarea>
-    <div class="ingredients-label">Includes: Core Objectives · Key Decisions · Project State</div>
+    <textarea id="output" readonly placeholder=""></textarea>
   </div>
 
+  <div class="actions-intro" id="actionsIntro"></div>
   <div class="actions">
     <button id="copyBtn" type="button" class="action-btn" disabled>
       <div class="btn-content">
         <span class="btn-main">Copy Egg</span>
-        <span class="btn-sub">Ready-to-use Prompt</span>
+        <span class="btn-sub">READY-TO-PASTE PROMPT</span>
       </div>
     </button>
     <button id="downloadBtn" type="button" class="action-btn" disabled>
       <div class="btn-content">
-        <span class="btn-main">Save Egg</span>
-        <span class="btn-sub">As Markdown File</span>
+        <span class="btn-main">Download Egg</span>
+        <span class="btn-sub">CONTINUE-CHAT FILE</span>
       </div>
     </button>
+  </div>
+
+  <div class="summary-choice-overlay" id="summaryChoiceOverlay" aria-hidden="true">
+    <div class="summary-choice-modal" role="dialog" aria-labelledby="summaryChoiceTitle">
+      <div class="summary-choice-buttons-view" id="summaryChoiceButtonsView">
+        <p class="summary-choice-title" id="summaryChoiceTitle">How do you want the summary?</p>
+        <div class="summary-choice-buttons">
+          <button type="button" id="summaryChoiceHuman" class="summary-choice-btn">Human read</button>
+          <button type="button" id="summaryChoiceAi" class="summary-choice-btn">AI read</button>
+        </div>
+        <p class="summary-choice-hint">Human read: optional API polish for meeting notes.<br>AI read: basic summary only.</p>
+      </div>
+      <div class="summary-choice-api-view" id="summaryChoiceApiView">
+        <p class="summary-choice-title">OpenAI API key (optional, for Summary polish)</p>
+        <input type="password" id="openaiKey" placeholder="sk-..." autocomplete="off" class="summary-choice-api-input" />
+        <button type="button" id="summaryChoiceTutorialToggle" class="summary-choice-tutorial-trigger" aria-expanded="false" aria-controls="summaryChoiceTutorialBody">
+          <span class="summary-choice-tutorial-chevron" id="summaryChoiceTutorialChevron">▶</span>
+          How to get an API key (2 min)
+        </button>
+        <div class="summary-choice-tutorial-body" id="summaryChoiceTutorialBody" role="region" hidden>
+          <p class="summary-choice-api-hint">1. Go to <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener" class="summary-choice-api-link">platform.openai.com/api-keys</a></p>
+          <p class="summary-choice-api-hint">2. Click Create new secret key</p>
+          <p class="summary-choice-api-hint">3. Choose: Owned by: You, Name: carryegg (optional), Project: Default project, Permissions: All</p>
+          <p class="summary-choice-api-hint">4. Copy the key (starts with <code>sk-</code>) and paste it above.</p>
+          <p class="summary-choice-api-hint summary-choice-api-tip">Tip: Your key stays on your device.</p>
+        </div>
+        <p class="summary-choice-api-status" id="summaryChoiceApiStatus" aria-live="polite"></p>
+        <button type="button" id="summaryChoiceApiDone" class="summary-choice-btn summary-choice-api-done">Done</button>
+      </div>
+      <div class="summary-choice-ready-view" id="summaryChoiceReadyView">
+        <p class="summary-choice-ready-message" id="summaryChoiceReadyMessage">API key saved. Ready to generate.</p>
+        <button type="button" id="summaryChoiceStartHumanBtn" class="summary-choice-btn summary-choice-start-btn">Start summarize</button>
+      </div>
+    </div>
   </div>
 
   <div class="history-drawer" id="historyDrawer">

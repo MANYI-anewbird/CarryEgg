@@ -94,21 +94,14 @@ body {
 
 /* Speech Bubble Status */
 .speech-bubble {
-  margin-bottom: 10px;
-  text-align: center;
+  margin-bottom: 4px;
+  text-align: left;
   font-size: 13px;
   font-weight: 700;
   font-style: italic;
   color: #666;
 }
 
-.speech-bubble #status::before {
-  content: '"';
-}
-
-.speech-bubble #status::after {
-  content: '"';
-}
 
 /* Progress bar (shown during Full Snapshot / Rolling) */
 .progress-bar-wrap {
@@ -129,7 +122,7 @@ body {
   background: #000;
   border-radius: 3px;
   width: 0%;
-  transition: width 0.2s ease;
+  transition: width 0.4s ease;
 }
 
 /* Button group: full-width, two buttons side by side */
@@ -139,6 +132,131 @@ body {
   gap: 8px;
   width: 100%;
   margin-bottom: 12px;
+}
+
+.api-key-row {
+  display: none;
+  margin-bottom: 10px;
+}
+
+.api-key-row.visible {
+  display: block;
+}
+
+.api-key-row label {
+  display: block;
+  font-size: 10px;
+  color: #666;
+  margin-bottom: 4px;
+}
+
+.api-key-row input {
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-family: Menlo, Consolas, monospace;
+}
+
+.api-key-row input:focus {
+  outline: none;
+  border-color: #999;
+}
+
+.api-key-hint {
+  margin: 4px 0 0;
+  font-size: 10px;
+  color: #888;
+  line-height: 1.3;
+}
+
+.api-key-hint:first-of-type {
+  margin-top: 6px;
+}
+
+/* Summary mode: Basic vs AI Enhanced status (visible only in Summary mode) */
+.summary-mode-status {
+  display: none;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  background: #f8f8f8;
+  border-radius: 8px;
+  font-size: 11px;
+  color: #555;
+}
+
+.summary-mode-status.visible {
+  display: block;
+}
+
+.summary-mode-status .summary-mode-basic {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.summary-mode-status .summary-mode-ai {
+  display: block;
+}
+
+.summary-mode-status .summary-mode-ai.muted {
+  color: #999;
+}
+
+.summary-mode-status .summary-mode-ai-note {
+  display: none;
+  margin-top: 4px;
+  font-size: 10px;
+  color: #888;
+  font-style: italic;
+}
+
+.summary-mode-status .summary-mode-ai-note.visible {
+  display: block;
+}
+
+.start-summarize-row {
+  display: none;
+  margin-bottom: 10px;
+}
+
+.start-summarize-row.visible {
+  display: block;
+}
+
+.start-summarize-btn {
+  width: 100%;
+  justify-content: center;
+  padding: 10px 14px;
+}
+
+/* Non-blocking toast */
+.toast-container {
+  position: fixed;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  pointer-events: none;
+}
+
+.toast {
+  padding: 8px 12px;
+  font-size: 11px;
+  color: #333;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  white-space: nowrap;
+  max-width: 320px;
+  white-space: normal;
+  animation: toast-in 0.2s ease;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .btn {
@@ -185,19 +303,43 @@ body {
   margin-top: 2px;
 }
 
-.btn.secondary {
+/* Mode buttons: both white when unselected, selected = black */
+.btn.mode-btn {
+  background: #fff;
+  color: #000;
+}
+
+.btn.mode-btn .btn-desc {
+  color: #666;
+}
+
+.btn.mode-btn.selected {
   background: #000;
   color: #fff;
 }
 
-.btn.secondary .btn-desc {
+.btn.mode-btn.selected .btn-desc {
   color: #ccc;
 }
 
-/* Textarea */
+.btn.mode-btn:focus-visible {
+  outline: 2px solid #000;
+  outline-offset: 2px;
+}
+
+/* Output area: label above gray box, then textarea */
 .output-container {
   margin-top: 14px;
-  margin-bottom: 14px;
+  margin-bottom: 6px;
+}
+
+.output-label {
+  font-size: 10px;
+  color: #999;
+  text-align: center;
+  margin-bottom: 2px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
 }
 
 .output-container textarea,
@@ -224,13 +366,15 @@ body {
   background: #ebebeb;
 }
 
-.ingredients-label {
-  font-size: 10px;
-  color: #999;
-  text-align: center;
-  margin-top: -2px;
+/* Intro line above Copy / Download buttons (same style as speech-bubble status) */
+.actions-intro {
+  font-size: 13px;
   font-weight: 700;
-  letter-spacing: 0.5px;
+  font-style: italic;
+  color: #666;
+  text-align: center;
+  margin-top: 2px;
+  margin-bottom: 8px;
 }
 
 /* Footer Actions */
@@ -303,6 +447,213 @@ body {
 }
 
 /* History Drawer */
+/* Summary choice modal: Human read vs AI read */
+.summary-choice-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 25;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.summary-choice-overlay.visible {
+  display: flex;
+}
+
+.summary-choice-modal {
+  background: #fff;
+  border: 2px solid #000;
+  border-radius: 12px;
+  padding: 16px;
+  max-width: 320px;
+  box-shadow: 4px 4px 0 #000;
+}
+
+.summary-choice-title {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.summary-choice-buttons {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.summary-choice-btn {
+  flex: 1;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: inherit;
+  border: 2px solid #000;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  box-shadow: 2px 2px 0 #000;
+}
+
+.summary-choice-btn:hover {
+  background: #f5f5f5;
+}
+
+.summary-choice-hint {
+  margin: 0;
+  font-size: 10px;
+  color: #666;
+  line-height: 1.4;
+}
+
+.summary-choice-api-view {
+  display: none;
+}
+
+.summary-choice-api-view.visible {
+  display: block;
+}
+
+.summary-choice-ready-view {
+  display: none;
+}
+
+.summary-choice-ready-view.visible {
+  display: block;
+}
+
+.summary-choice-ready-message {
+  margin: 0 0 14px;
+  font-size: 13px;
+  color: #333;
+}
+
+.summary-choice-buttons-view.hidden {
+  display: none;
+}
+
+.summary-choice-start-row {
+  margin-top: 14px;
+}
+
+.summary-choice-start-row.hidden {
+  display: none;
+}
+
+.summary-choice-start-btn {
+  width: 100%;
+  font-weight: 700;
+}
+
+
+.summary-choice-api-input {
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-family: Menlo, Consolas, monospace;
+  margin-bottom: 6px;
+  box-sizing: border-box;
+}
+
+.summary-choice-tutorial-trigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  margin: 8px 0 0;
+  padding: 6px 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: #555;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+}
+
+.summary-choice-tutorial-trigger:hover {
+  color: #000;
+}
+
+.summary-choice-tutorial-chevron {
+  font-size: 10px;
+  line-height: 1;
+  transition: transform 0.2s ease;
+}
+
+.summary-choice-tutorial-trigger[aria-expanded="true"] .summary-choice-tutorial-chevron {
+  transform: rotate(90deg);
+}
+
+.summary-choice-tutorial-body {
+  margin: 4px 0 10px 12px;
+  padding-left: 4px;
+  border-left: 2px solid #e0e0e0;
+}
+
+.summary-choice-tutorial-body[hidden] {
+  display: none;
+}
+
+.summary-choice-api-hint {
+  margin: 0 0 4px;
+  font-size: 10px;
+  color: #888;
+  line-height: 1.3;
+}
+
+.summary-choice-api-hint code {
+  background: #eee;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 10px;
+}
+
+.summary-choice-api-hint .summary-choice-api-link {
+  color: #0066cc;
+  text-decoration: none;
+}
+
+.summary-choice-api-hint .summary-choice-api-link:hover {
+  text-decoration: underline;
+}
+
+.summary-choice-api-heading {
+  font-weight: 700;
+  color: #555;
+  margin-bottom: 6px;
+}
+
+.summary-choice-api-tip {
+  margin-top: 6px;
+  font-style: italic;
+}
+
+.summary-choice-api-status {
+  margin: 8px 0 0;
+  font-size: 12px;
+  font-weight: 700;
+  min-height: 1.4em;
+}
+
+.summary-choice-api-status.verifying {
+  color: #666;
+}
+
+.summary-choice-api-status:not(.verifying) {
+  color: #0a0;
+}
+
+.summary-choice-api-done {
+  width: 100%;
+  margin-top: 12px;
+}
+
 .history-drawer {
   position: fixed;
   bottom: 0;
