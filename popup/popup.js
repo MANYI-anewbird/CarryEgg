@@ -65,37 +65,47 @@
   var CHUNK_THRESHOLD = 8000;
   var CHUNK_SIZE = 6000;
 
-  /** Pass 1: transcript -> JSON. Professional meeting notes: outcome-first, selective, no AI-generic filler. */
+  /** Model for summary passes. Use "gpt-4o" for 元宝-level quality (higher cost). */
+  var SUMMARY_MODEL = 'gpt-4o-mini';
+
+  /** Pass 1: transcript -> JSON. Professional meeting notes: outcome-first, 会议概览, concrete bullets. */
   var EXTRACT_MEETING_JSON_PROMPT =
-    'You are writing real human-style meeting minutes. Be concise and outcome-oriented. Use the same language as the transcript. Do NOT copy sentences from the transcript; write NEW notes in neutral third-person. '
-    + 'Prioritize clarity over completeness. Include only what materially changed understanding or direction. Avoid AI-generic phrasing like "identified issues", "discussed solutions", "explored options" unless clearly meaningful. '
+    'You are writing professional meeting minutes (like Tencent Meeting / Yuanbao). Be concise, outcome-oriented, concrete. Use the same language as the transcript. Do NOT copy sentences; write NEW notes in neutral third-person. '
+    + 'Each bullet or item must be a concrete, standalone statement (e.g. "X agreed to do Y by Z", "Decision: use approach A"). No vague phrases like "discussed options" or "explored ideas" unless you add the concrete outcome. '
     + 'Output a single JSON object with these exact keys. No quotes inside strings, no **, no emoji. '
-    + '"topic": 1-2 concise sentences describing the overall discussion (max 40 words). '
-    + '"decisions": array of highest-priority outcomes only; explicitly agreed or stated. If none: ["(None.)"]. Do not infer or speculate. '
-    + '"key_themes": array of 3-5 short phrases max; only meaningful insights. Remove filler or generic points. '
-    + '"how_evolved": array of max 3 short items showing how the discussion progressed (e.g. one sentence per stage). Omit or [] if not useful. '
-    + '"next_steps": array of ONLY explicitly agreed or clearly requested actions. NEVER invent timelines ("next week", "soon"). If no clear action: []. '
+    + '"overview": one short sentence (max 15 words) — the 5-second executive summary (会议概览). What was this conversation about in one line? '
+    + '"topic": 1-2 concise sentences describing the discussion (max 40 words). '
+    + '"decisions": array of highest-priority outcomes only; explicitly agreed or stated. Each item concrete. If none: ["(None.)"]. Do not infer. '
+    + '"key_themes": array of 3-5 short phrases; only meaningful, concrete insights. No filler. '
+    + '"how_evolved": array of max 3 short items showing progression (one sentence per stage). Omit or [] if not useful. '
+    + '"next_steps": array of ONLY explicitly agreed actions. Prefer "Who: what by when" when known. NEVER invent timelines. If none: []. '
     + '"context": one short sentence for background, or empty string. '
     + 'Output only the JSON object, no other text.';
 
-  /** Pass 2: JSON -> markdown. Mandatory format: Topic, Decisions, Key Points, How the discussion evolved (optional), Next Steps (optional), Context (optional). */
+  /** Pass 2: JSON -> markdown. Format: Overview (会议概览), Topic, Decisions, Key Points, How evolved, Next Steps, Context. */
   var JSON_TO_MEETING_NOTES_PROMPT =
-    'Convert this JSON into meeting notes markdown. Same language as the JSON. Write like real human meeting minutes: concise, outcome-oriented, selective (not exhaustive). High information density; avoid repetition; short scannable bullets. '
-    + 'Do not add new content beyond the JSON. Only include decisions and next steps that were explicitly agreed. Never invent timelines. '
+    'Convert this JSON into meeting notes markdown. Same language as the JSON. Professional style: every bullet must be concrete and standalone (who/what/when when relevant). No vague wording. High information density; short scannable bullets. '
+    + 'Do not add content beyond the JSON. Only include decisions and next steps that were explicitly agreed. Never invent timelines. '
     + 'Output exactly these sections in this order. Use only the JSON values. '
-    + '"# Conversation Summary" then "## Topic" (topic: 1-2 concise sentences) then "## Decisions / Conclusions" (one bullet per item; if none write "(None.)") then "## Key Discussion Points" (3-5 bullets max; meaningful insights only) then "## How the discussion evolved" (optional; max 3 bullets; omit section if empty) then "## Next Steps" (optional; omit entire section if array is empty) then "## Context Snapshot" (optional; one line "Background: " + context; omit if empty). '
+    + '"# Conversation Summary" then "## Overview" (overview: one line, 会议概览) then "## Topic" (topic: 1-2 sentences) then "## Decisions / Conclusions" (one bullet per item; if none "(None.)") then "## Key Discussion Points" (3-5 bullets; concrete only) then "## How the discussion evolved" (optional; max 3 bullets; omit if empty) then "## Next Steps" (optional; omit if empty) then "## Context Snapshot" (optional; "Background: " + context; omit if empty). '
     + 'Output only the markdown.';
 
-  /** For each segment when transcript is chunked. Same principles: selective, outcome-only, no invented timelines. */
-  var SEGMENT_SUMMARY_PROMPT =
-    'Summarize this segment as professional meeting notes. Concise, outcome-oriented. Do NOT copy sentences; write new notes in neutral third-person. Only include decisions and next steps explicitly agreed; never invent timelines. '
-    + 'Output only: (1) topic: 1-2 short sentences, (2) decisions (or none), (3) key_themes: 2-4 meaningful phrases, (4) how_evolved: max 3 progression points if useful, (5) next_steps only if clearly agreed, (6) context one line if needed. No filler. No **. One line per item.';
+  /** Pass 3: Polish draft for 元宝-level clarity and concreteness. Same structure. */
+  var POLISH_MEETING_NOTES_PROMPT =
+    'You are an editor. Rewrite this meeting memo to be more like professional meeting minutes (Tencent Meeting / Yuanbao style): clearer, more concrete, same structure and facts. '
+    + 'Keep every section and bullet. Improve wording: make each bullet a concrete standalone statement; remove vagueness; keep "Who / what / by when" where present. Do not add new facts. Do not remove any section. '
+    + 'Output only the improved markdown, same headings and order.';
 
-  /** Merge segment summaries into one meeting notes document. Same format and quality rules. */
+  /** For each segment when transcript is chunked. Include overview, concrete bullets. */
+  var SEGMENT_SUMMARY_PROMPT =
+    'Summarize this segment as professional meeting notes. Concrete, outcome-oriented. Do NOT copy sentences; write new notes in neutral third-person. Each bullet must be concrete (who/what/when when known). Only decisions and next steps explicitly agreed; never invent timelines. '
+    + 'Output only: (1) overview: one short sentence, (2) topic: 1-2 sentences, (3) decisions (or none), (4) key_themes: 2-4 concrete phrases, (5) how_evolved: max 3 if useful, (6) next_steps only if agreed, (7) context one line if needed. No **. One line per item.';
+
+  /** Merge segment summaries. Same format: Overview, Topic, Decisions, Key Points, How evolved, Next Steps, Context. */
   var MERGE_NOTES_PROMPT =
-    'From these segment summaries, write ONE set of meeting notes. Professional, human-style: concise, outcome-oriented, selective. Do NOT copy sentences verbatim. Same language as segments. Only include decisions and next steps that were explicitly agreed; never invent timelines. '
-    + 'High information density; no repetition; short bullets. Avoid AI-generic wording. '
-    + 'Output exactly in this order: "# Conversation Summary" then "## Topic" (1-2 sentences) then "## Decisions / Conclusions" (bullets or "(None.)") then "## Key Discussion Points" (3-5 bullets max) then "## How the discussion evolved" (optional; max 3 bullets; omit if empty) then "## Next Steps" (omit if none) then "## Context Snapshot" (optional; "Background: ..."; omit if empty). Markdown only.';
+    'From these segment summaries, write ONE set of meeting notes. Professional style: concrete bullets, outcome-oriented. Same language as segments. Only decisions and next steps explicitly agreed; never invent timelines. '
+    + 'Every bullet must be a concrete standalone statement. High information density; no repetition. '
+    + 'Output exactly: "# Conversation Summary" then "## Overview" (one line) then "## Topic" (1-2 sentences) then "## Decisions / Conclusions" then "## Key Discussion Points" (3-5 bullets) then "## How the discussion evolved" (optional; max 3; omit if empty) then "## Next Steps" (omit if none) then "## Context Snapshot" (optional). Markdown only.';
 
   /**
    * Format messages as plain transcript for Pass 1. Truncates if over MAX_TRANSCRIPT_CHARS (keeps tail).
@@ -159,15 +169,17 @@
    * @param {string} systemPrompt
    * @param {string} userContent
    * @param {number} [maxTokens=800]
+   * @param {string} [model] - Optional. Default gpt-4o-mini. Use SUMMARY_MODEL for summary passes.
    * @returns {Promise<{content:string, error:string|null}>}
    */
-  function callOpenAI(apiKey, systemPrompt, userContent, maxTokens) {
+  function callOpenAI(apiKey, systemPrompt, userContent, maxTokens, model) {
     var tokens = (typeof maxTokens === 'number' && maxTokens > 0) ? maxTokens : 800;
+    var useModel = (typeof model === 'string' && model) ? model : 'gpt-4o-mini';
     return fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: useModel,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userContent }
@@ -205,6 +217,7 @@
     if (!text || typeof text !== 'string') return false;
     var t = text.trim();
     if (t.indexOf('# Conversation Summary') !== 0) return false;
+    if (t.indexOf('## Overview') === -1) return false;
     if (t.indexOf('## Topic') === -1) return false;
     if (t.indexOf('## Decisions / Conclusions') === -1) return false;
     if (t.indexOf('## Key Discussion Points') === -1) return false;
@@ -287,7 +300,7 @@
         chunks.push(transcript.slice(i, i + CHUNK_SIZE));
       }
       var segmentPromises = chunks.map(function (chunk) {
-        return callOpenAI(apiKey, SEGMENT_SUMMARY_PROMPT, chunk, 400);
+        return callOpenAI(apiKey, SEGMENT_SUMMARY_PROMPT, chunk, 400, SUMMARY_MODEL);
       });
       return Promise.all(segmentPromises)
         .then(function (results) {
@@ -305,13 +318,32 @@
             return fallback;
           }
           var combined = 'Segment summaries:\n\n' + segments.join('\n\n---\n\n');
-          return callOpenAI(apiKey, MERGE_NOTES_PROMPT, combined, 900);
+          return callOpenAI(apiKey, MERGE_NOTES_PROMPT, combined, 900, SUMMARY_MODEL);
         })
         .then(function (result) {
           var content = (result && result.content) ? result.content : '';
           var err = (result && result.error) ? result.error : null;
-          progress(100, null);
-          return validateAndReturn(content, err);
+          if (!content) {
+            fallback.errorReason = err || 'Merge failed';
+            if (typeof onApiFallback === 'function') onApiFallback(fallback.errorReason);
+            progress(100, null);
+            return fallback;
+          }
+          progress(75, 'Polishing…');
+          return callOpenAI(apiKey, POLISH_MEETING_NOTES_PROMPT, content, 900, SUMMARY_MODEL)
+            .then(function (polishResult) {
+              var polished = (polishResult && polishResult.content) ? polishResult.content.trim() : '';
+              if (polished && isValidPolishedStructure(polished) && isTopicSectionReasonable(polished)) {
+                progress(100, null);
+                return validateAndReturn(polished, null);
+              }
+              progress(100, null);
+              return validateAndReturn(content, err);
+            })
+            .catch(function () {
+              progress(100, null);
+              return validateAndReturn(content, err);
+            });
         })
         .catch(function () {
           fallback.errorReason = 'Request failed';
@@ -321,10 +353,10 @@
         });
     }
 
-    progress(25, 'Step 1/2: Extracting structure…');
-    return callOpenAI(apiKey, EXTRACT_MEETING_JSON_PROMPT, transcript, 600)
+    progress(25, 'Step 1/3: Extracting structure…');
+    return callOpenAI(apiKey, EXTRACT_MEETING_JSON_PROMPT, transcript, 600, SUMMARY_MODEL)
       .then(function (result) {
-        progress(50, null);
+        progress(45, null);
         if (result.error && typeof console !== 'undefined' && console.log) console.log('[Snapshot Debug] Pass 1 error:', result.error);
         if (!result.content) {
           fallback.errorReason = result.error || 'API error';
@@ -339,9 +371,9 @@
           progress(100, null);
           return fallback;
         }
-        progress(55, 'Step 2/2: Writing notes…');
+        progress(50, 'Step 2/3: Writing notes…');
         var jsonStr = JSON.stringify(json);
-        return callOpenAI(apiKey, JSON_TO_MEETING_NOTES_PROMPT, jsonStr, 700);
+        return callOpenAI(apiKey, JSON_TO_MEETING_NOTES_PROMPT, jsonStr, 800, SUMMARY_MODEL);
       })
       .then(function (result) {
         if (!result) {
@@ -350,8 +382,27 @@
         }
         var content = (result.content) ? result.content : '';
         var err = (result.error) ? result.error : null;
-        progress(100, null);
-        return validateAndReturn(content, err);
+        if (!content) {
+          fallback.errorReason = err || 'API error';
+          if (typeof onApiFallback === 'function') onApiFallback(fallback.errorReason);
+          progress(100, null);
+          return fallback;
+        }
+        progress(75, 'Step 3/3: Polishing…');
+        return callOpenAI(apiKey, POLISH_MEETING_NOTES_PROMPT, content, 900, SUMMARY_MODEL)
+          .then(function (polishResult) {
+            var polished = (polishResult && polishResult.content) ? polishResult.content.trim() : '';
+            if (polished && isValidPolishedStructure(polished) && isTopicSectionReasonable(polished)) {
+              progress(100, null);
+              return validateAndReturn(polished, null);
+            }
+            progress(100, null);
+            return validateAndReturn(content, err);
+          })
+          .catch(function () {
+            progress(100, null);
+            return validateAndReturn(content, err);
+          });
       })
       .catch(function () {
         fallback.errorReason = 'Request failed';
