@@ -25,10 +25,7 @@
   const summaryModeAiNoteEl = document.getElementById('summaryModeAiNote');
   const toastContainerEl = document.getElementById('toastContainer');
   const summaryChoiceOverlayEl = document.getElementById('summaryChoiceOverlay');
-  const summaryChoiceButtonsViewEl = document.getElementById('summaryChoiceButtonsView');
   const summaryChoiceApiViewEl = document.getElementById('summaryChoiceApiView');
-  const summaryChoiceHumanBtn = document.getElementById('summaryChoiceHuman');
-  const summaryChoiceAiBtn = document.getElementById('summaryChoiceAi');
   const summaryChoiceApiDoneBtn = document.getElementById('summaryChoiceApiDone');
   const summaryChoiceApiStatusEl = document.getElementById('summaryChoiceApiStatus');
   const summaryChoiceTutorialToggle = document.getElementById('summaryChoiceTutorialToggle');
@@ -38,9 +35,20 @@
   const summaryChoiceStartBtn = document.getElementById('summaryChoiceStartHumanBtn');
   const startSummarizeRowEl = document.getElementById('startSummarizeRow');
   const startSummarizeBtn = document.getElementById('startSummarizeBtn');
+  const digestApiKeyOptionRow = document.getElementById('digestApiKeyOptionRow');
+  const changeOpenaiKeyBtn = document.getElementById('changeOpenaiKeyBtn');
+  const digestModalHintEl = document.getElementById('digestModalHint');
+  const summaryChoiceRunDigestBtn = document.getElementById('summaryChoiceRunDigestBtn');
+
+  /**
+   * True when the modal was opened from a rate limit (stay on API key view after Done so the user can keep editing).
+   */
+  var digestModalStayOnApiAfterSave = false;
+
+  /** Default copy for #digestModalHint (reset when closing the digest modal). */
+  var DEFAULT_DIGEST_MODAL_HINT = 'Summarize builds an API-generated archive digest. Add your OpenAI key below (it stays on this device).';
 
   var mode = 'continue';
-  var summaryChoice = null; // 'human' | 'ai' | null; when null, Summarize shows choice modal first
   var lastSnapshotMode = null;
   var lastExportMode = 'continue';
   var lastContinueOutput = '';
@@ -48,15 +56,15 @@
 
   var PLACEHOLDER = {
     continue: "We'll distill and pack your chat into a portable Egg you can drop into a new chat to continue.",
-    summary: "We'll distill your chat into a clean summary Egg you can reuse or share."
+    summary: "We'll turn your chat into a Chat Digest — an API-generated archive you can keep or share."
   };
   var HELPER = {
     continue: '"Copy or download, drop it into a new chat to continue."',
-    summary: '"Copy or download your summary Egg to reuse or share."'
+    summary: '"Copy or download your Chat Digest."'
   };
   var ACTION_COPY = {
     continue: { copyTitle: 'Copy Egg', copySub: 'READY-TO-PASTE PROMPT', downloadTitle: 'Download Egg', downloadSub: 'CONTINUE-CHAT FILE' },
-    summary: { copyTitle: 'Copy Summary', copySub: '', downloadTitle: 'Download Report', downloadSub: '' }
+    summary: { copyTitle: 'Copy Digest', copySub: '', downloadTitle: 'Download Digest', downloadSub: '' }
   };
 
   var OPENAI_API_KEY_STORAGE = 'carryegg_openai_api_key';
@@ -65,47 +73,61 @@
   var CHUNK_THRESHOLD = 8000;
   var CHUNK_SIZE = 6000;
 
-  /** Model for summary passes. Use "gpt-4o" for 元宝-level quality (higher cost). */
-  var SUMMARY_MODEL = 'gpt-4o-mini';
+  /** Model for digest API calls. Use "gpt-4o" for higher quality (higher cost). */
+  var SUMMARY_MODEL = 'gpt-4o';
 
-  /** Pass 1: transcript -> JSON. Professional meeting notes: outcome-first, 会议概览, concrete bullets. */
-  var EXTRACT_MEETING_JSON_PROMPT =
-    'You are writing professional meeting minutes (like Tencent Meeting / Yuanbao). Be concise, outcome-oriented, concrete. Use the same language as the transcript. Do NOT copy sentences; write NEW notes in neutral third-person. '
-    + 'Each bullet or item must be a concrete, standalone statement (e.g. "X agreed to do Y by Z", "Decision: use approach A"). No vague phrases like "discussed options" or "explored ideas" unless you add the concrete outcome. '
-    + 'Output a single JSON object with these exact keys. No quotes inside strings, no **, no emoji. '
-    + '"overview": one short sentence (max 15 words) — the 5-second executive summary (会议概览). What was this conversation about in one line? '
-    + '"topic": 1-2 concise sentences describing the discussion (max 40 words). '
-    + '"decisions": array of highest-priority outcomes only; explicitly agreed or stated. Each item concrete. If none: ["(None.)"]. Do not infer. '
-    + '"key_themes": array of 3-5 short phrases; only meaningful, concrete insights. No filler. '
-    + '"how_evolved": array of max 3 short items showing progression (one sentence per stage). Omit or [] if not useful. '
-    + '"next_steps": array of ONLY explicitly agreed actions. Prefer "Who: what by when" when known. NEVER invent timelines. If none: []. '
-    + '"context": one short sentence for background, or empty string. '
-    + 'Output only the JSON object, no other text.';
+  /**
+   * Single-call short-chat digest: system prompt. User message is the full transcript.
+   */
+  var DIGEST_SYSTEM_PROMPT =
+    'You write a Chat Digest — an archive card of an AI chat worth saving, not a continuation snapshot, handoff note, or meeting summary.\n'
+    + 'Rules:\n'
+    + '- Write in the same language as the conversation. If the conversation mixes languages, choose ONE dominant language and use it for the entire digest. Do not mix languages.\n'
+    + '- Use natural, user-facing language. Do not use meeting, agenda, minutes, or handoff language.\n'
+    + '- Do not produce a generic recap. Prioritize what was learned over everything that was merely discussed.\n'
+    + '- ## How the View Evolved: each bullet must show real movement in thought. Each bullet must reflect at least one of: contrast, correction, reframing, turning point, or shift in priority. If a bullet is only a generic evaluation or observation, rewrite it until it shows movement in reasoning.\n'
+    + '- ## Main Insight: one sharp, memorable takeaway — not several vague points.\n'
+    + '- ## Open Tensions: unresolved questions, ambiguities, or tradeoffs worth revisiting — not task checklists or generic next steps.\n'
+    + 'Output ONLY markdown. Start with exactly the line "# Chat Digest" (no text before it). Use exactly these section headings in this order:\n'
+    + '# Chat Digest\n'
+    + '## Core Question\n'
+    + '## How the View Evolved\n'
+    + '## Main Insight\n'
+    + '## Why It Matters\n'
+    + '## Open Tensions\n'
+    + 'Under ## How the View Evolved use a markdown bullet list. Under ## Open Tensions use bullets; if there are none, a single line: — Nothing unresolved worth flagging here.';
 
-  /** Pass 2: JSON -> markdown. Format: Overview (会议概览), Topic, Decisions, Key Points, How evolved, Next Steps, Context. */
-  var JSON_TO_MEETING_NOTES_PROMPT =
-    'Convert this JSON into meeting notes markdown. Same language as the JSON. Professional style: every bullet must be concrete and standalone (who/what/when when relevant). No vague wording. High information density; short scannable bullets. '
-    + 'Do not add content beyond the JSON. Only include decisions and next steps that were explicitly agreed. Never invent timelines. '
-    + 'Output exactly these sections in this order. Use only the JSON values. '
-    + '"# Conversation Summary" then "## Overview" (overview: one line, 会议概览) then "## Topic" (topic: 1-2 sentences) then "## Decisions / Conclusions" (one bullet per item; if none "(None.)") then "## Key Discussion Points" (3-5 bullets; concrete only) then "## How the discussion evolved" (optional; max 3 bullets; omit if empty) then "## Next Steps" (optional; omit if empty) then "## Context Snapshot" (optional; "Background: " + context; omit if empty). '
-    + 'Output only the markdown.';
+  /**
+   * Long-chat path: one chronological segment (full transcript is split from the start, no tail cut).
+   */
+  var DIGEST_SEGMENT_PROMPT =
+    'You are processing one chronological segment of a longer AI chat. Later passes will merge segments into one Chat Digest. '
+    + 'Same language as this segment; if mixed, use ONE dominant language only. '
+    + 'Archive focus only: core tension, how views moved, insight, stakes, unresolved tensions. '
+    + 'No meeting/handoff/task-list language. Not a recap of everything said.\n'
+    + 'Output plain text only, using exactly these lines (one value per line, no markdown headers):\n'
+    + 'CORE_QUESTION: (one sentence — what this segment centers on)\n'
+    + 'VIEW_SHIFT: (one bullet-style line; repeat VIEW_SHIFT: for each distinct reasoning shift in this segment, 1–4 lines; each must show contrast, correction, reframing, turning point, or priority shift)\n'
+    + 'INSIGHT_SNIPPET: (one sentence — sharpest takeaway from this segment)\n'
+    + 'WHY_SNIPPET: (one short sentence — why that matters)\n'
+    + 'TENSIONS: (tensions as "a | b" or NONE)\n';
 
-  /** Pass 3: Polish draft for 元宝-level clarity and concreteness. Same structure. */
-  var POLISH_MEETING_NOTES_PROMPT =
-    'You are an editor. Rewrite this meeting memo to be more like professional meeting minutes (Tencent Meeting / Yuanbao style): clearer, more concrete, same structure and facts. '
-    + 'Keep every section and bullet. Improve wording: make each bullet a concrete standalone statement; remove vagueness; keep "Who / what / by when" where present. Do not add new facts. Do not remove any section. '
-    + 'Output only the improved markdown, same headings and order.';
-
-  /** For each segment when transcript is chunked. Include overview, concrete bullets. */
-  var SEGMENT_SUMMARY_PROMPT =
-    'Summarize this segment as professional meeting notes. Concrete, outcome-oriented. Do NOT copy sentences; write new notes in neutral third-person. Each bullet must be concrete (who/what/when when known). Only decisions and next steps explicitly agreed; never invent timelines. '
-    + 'Output only: (1) overview: one short sentence, (2) topic: 1-2 sentences, (3) decisions (or none), (4) key_themes: 2-4 concrete phrases, (5) how_evolved: max 3 if useful, (6) next_steps only if agreed, (7) context one line if needed. No **. One line per item.';
-
-  /** Merge segment summaries. Same format: Overview, Topic, Decisions, Key Points, How evolved, Next Steps, Context. */
-  var MERGE_NOTES_PROMPT =
-    'From these segment summaries, write ONE set of meeting notes. Professional style: concrete bullets, outcome-oriented. Same language as segments. Only decisions and next steps explicitly agreed; never invent timelines. '
-    + 'Every bullet must be a concrete standalone statement. High information density; no repetition. '
-    + 'Output exactly: "# Conversation Summary" then "## Overview" (one line) then "## Topic" (1-2 sentences) then "## Decisions / Conclusions" then "## Key Discussion Points" (3-5 bullets) then "## How the discussion evolved" (optional; max 3; omit if empty) then "## Next Steps" (omit if none) then "## Context Snapshot" (optional). Markdown only.';
+  /**
+   * Long-chat path: merge segment extractions into the final digest (single structure).
+   */
+  var DIGEST_MERGE_PROMPT =
+    'You receive ordered segment extractions from ONE chat (earlier segments first). Produce ONE final Chat Digest in markdown. '
+    + 'Same language throughout; one dominant language only. '
+    + 'Synthesize across segments: one core question for the whole chat, 3–5 bullets for How the View Evolved that span the full arc without repeating the same shift. '
+    + 'Archive tone — not a handoff, not meeting notes, not a task list. '
+    + 'Main Insight = one sharp takeaway for the whole conversation. Open Tensions = real unresolved questions or tradeoffs only.\n'
+    + 'Output ONLY markdown. Start with exactly "# Chat Digest". Then exactly these headings in order:\n'
+    + '## Core Question\n'
+    + '## How the View Evolved\n'
+    + '## Main Insight\n'
+    + '## Why It Matters\n'
+    + '## Open Tensions\n'
+    + 'Bullets under How the View Evolved and Open Tensions. If no tensions: one line under Open Tensions: — Nothing unresolved worth flagging here.';
 
   /**
    * Format messages as plain transcript for Pass 1. Truncates if over MAX_TRANSCRIPT_CHARS (keeps tail).
@@ -128,6 +150,25 @@
       transcript = transcript.slice(-MAX_TRANSCRIPT_CHARS);
     }
     return transcript;
+  }
+
+  /**
+   * Full transcript for Chat Digest only — same shape as formatTranscript but no tail truncation.
+   * @param {Array<{role:string, content_markdown?:string}>} messages
+   * @returns {string}
+   */
+  function formatFullTranscript(messages) {
+    if (!Array.isArray(messages) || messages.length === 0) return '';
+    var parts = [];
+    for (var i = 0; i < messages.length; i++) {
+      var m = messages[i];
+      var role = (m && m.role) ? String(m.role) : 'assistant';
+      var text = (m && m.content_markdown) ? String(m.content_markdown).trim() : '';
+      if (!text) continue;
+      var label = role === 'user' ? 'User' : 'Assistant';
+      parts.push(label + ':\n' + text);
+    }
+    return parts.join('\n\n');
   }
 
   /**
@@ -170,7 +211,7 @@
    * @param {string} userContent
    * @param {number} [maxTokens=800]
    * @param {string} [model] - Optional. Default gpt-4o-mini. Use SUMMARY_MODEL for summary passes.
-   * @returns {Promise<{content:string, error:string|null}>}
+   * @returns {Promise<{content:string, error:string|null, status:number}>}
    */
   function callOpenAI(apiKey, systemPrompt, userContent, maxTokens, model) {
     var tokens = (typeof maxTokens === 'number' && maxTokens > 0) ? maxTokens : 800;
@@ -189,69 +230,115 @@
       })
     })
       .then(function (res) {
+        var status = res.status;
         return res.json()
           .then(function (data) {
             var errMsg = (data && data.error && data.error.message) ? String(data.error.message) : null;
-            if (!res.ok && errMsg) return { content: '', error: errMsg };
-            if (!res.ok) return { content: '', error: res.status === 401 ? 'Invalid API key' : res.status === 429 ? 'Rate limit' : 'HTTP ' + res.status };
-            if (data && data.error && errMsg) return { content: '', error: errMsg };
+            if (!res.ok && errMsg) return { content: '', error: errMsg, status: status };
+            if (!res.ok) {
+              return {
+                content: '',
+                error: status === 401 ? 'Invalid API key' : status === 429 ? 'Rate limit' : 'HTTP ' + status,
+                status: status
+              };
+            }
+            if (data && data.error && errMsg) return { content: '', error: errMsg, status: status };
             var content = (data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) ? String(data.choices[0].message.content).trim() : '';
-            return { content: content, error: null };
+            return { content: content, error: null, status: status };
           })
           .catch(function () {
-            if (!res.ok) return { content: '', error: res.status === 401 ? 'Invalid API key' : res.status === 429 ? 'Rate limit' : 'HTTP ' + res.status };
-            return { content: '', error: 'Invalid response from API' };
+            if (!res.ok) {
+              return {
+                content: '',
+                error: status === 401 ? 'Invalid API key' : status === 429 ? 'Rate limit' : 'HTTP ' + status,
+                status: status
+              };
+            }
+            return { content: '', error: 'Invalid response from API', status: status };
           });
       })
       .catch(function () {
-        return { content: '', error: 'Network or request failed' };
+        return { content: '', error: 'Network or request failed', status: 0 };
       });
   }
 
   /**
-   * Lightweight check that polished output has the required structure. If not, we fall back to draft.
+   * True when the failure is due to a bad, revoked, or expired API key (user should re-enter).
+   * @param {string|null|undefined} errorMessage
+   * @param {number} [httpStatus]
+   */
+  function isOpenAIApiKeyAuthError(errorMessage, httpStatus) {
+    if (httpStatus === 401) return true;
+    if (!errorMessage || typeof errorMessage !== 'string') return false;
+    var t = errorMessage.toLowerCase();
+    if (t.indexOf('invalid api key') !== -1) return true;
+    if (t.indexOf('incorrect api key') !== -1) return true;
+    if (t.indexOf('invalid_api_key') !== -1) return true;
+    if (t.indexOf('expired') !== -1 && (t.indexOf('key') !== -1 || t.indexOf('api') !== -1)) return true;
+    if (t.indexOf('authentication') !== -1 && t.indexOf('key') !== -1) return true;
+    if (t.indexOf('could not be resolved') !== -1 && t.indexOf('key') !== -1) return true;
+    return false;
+  }
+
+  /**
+   * True when OpenAI rejected the request due to rate / quota limits (user should wait and retry, not change the key).
+   * @param {string|null|undefined} errorMessage
+   * @param {number} [httpStatus]
+   */
+  function isOpenAIRateLimitError(errorMessage, httpStatus) {
+    if (httpStatus === 429) return true;
+    if (!errorMessage || typeof errorMessage !== 'string') return false;
+    var t = errorMessage.toLowerCase();
+    if (t.indexOf('rate limit') !== -1) return true;
+    if (t.indexOf('tokens per min') !== -1 || t.indexOf('(tpm)') !== -1) return true;
+    if (t.indexOf('too many requests') !== -1) return true;
+    return false;
+  }
+
+  /**
+   * Lightweight check that API output has the required Chat Digest headings. If not, we fall back to draft.
    * @param {string} text
    * @returns {boolean}
    */
-  function isValidPolishedStructure(text) {
+  function isValidDigestStructure(text) {
     if (!text || typeof text !== 'string') return false;
     var t = text.trim();
-    if (t.indexOf('# Conversation Summary') !== 0) return false;
-    if (t.indexOf('## Overview') === -1) return false;
-    if (t.indexOf('## Topic') === -1) return false;
-    if (t.indexOf('## Decisions / Conclusions') === -1) return false;
-    if (t.indexOf('## Key Discussion Points') === -1) return false;
+    if (t.indexOf('# Chat Digest') !== 0) return false;
+    if (t.indexOf('## Core Question') === -1) return false;
+    if (t.indexOf('## How the View Evolved') === -1) return false;
+    if (t.indexOf('## Main Insight') === -1) return false;
+    if (t.indexOf('## Why It Matters') === -1) return false;
+    if (t.indexOf('## Open Tensions') === -1) return false;
     return true;
   }
 
-  /** Max length for Topic section body (1-2 sentences). Longer = likely pasted conversation. */
-  var MAX_TOPIC_BODY_LENGTH = 320;
+  /** Max length for "## Core Question" body. Longer = likely pasted conversation. */
+  var MAX_CORE_QUESTION_BODY_LENGTH = 320;
 
-  function isTopicSectionReasonable(text) {
+  function isCoreQuestionSectionReasonable(text) {
     if (!text || typeof text !== 'string') return false;
-    var topicStart = text.indexOf('## Topic');
-    if (topicStart === -1) return false;
-    var afterTopic = topicStart + 8;
-    var nextH2 = text.indexOf('\n## ', afterTopic);
+    var sectionHeader = '## Core Question';
+    var start = text.indexOf(sectionHeader);
+    if (start === -1) return false;
+    var after = start + sectionHeader.length;
+    var nextH2 = text.indexOf('\n## ', after);
     var end = nextH2 !== -1 ? nextH2 : text.length;
-    var body = text.slice(afterTopic, end).replace(/#+/g, '').trim();
-    if (body.length > MAX_TOPIC_BODY_LENGTH) return false;
-    if (body.indexOf('**') !== -1) return false;
-    if (/直话直说|此对话|我(们)?(认为|觉得|看)/.test(body)) return false;
+    var body = text.slice(after, end).replace(/#+/g, '').trim();
+    if (body.length > MAX_CORE_QUESTION_BODY_LENGTH) return false;
     return true;
   }
 
   /**
-   * Generate meeting notes from FULL chat transcript only. API input is ALWAYS transcript (never draft).
-   * If transcript is too long, chunks it and does segment summaries then merge. Falls back to draft on any failure.
+   * Generate Chat Digest from FULL chat transcript only. API input is ALWAYS transcript (never draft).
+   * If transcript is too long, chunks it and does segment summaries then merge. Falls back to draft on hard failure.
    * @param {string} transcript - Full transcript (User:\n...\n\nAssistant:\n...)
    * @param {string} apiKey
-   * @param {string} draft - Rule-based summary (fallback only, never sent to API)
+   * @param {string} draft - Stub markdown (fallback only if API output fails validation, never sent to API)
    * @param {function(string|null)} [onApiFallback]
    * @param {function(number, string|null)} [setProgressFn] - Optional. (pct 0-100, statusText). Called during API steps.
    * @returns {Promise<{text:string, fromApi:boolean}>}
    */
-  function generateMeetingNotesFromTranscript(transcript, apiKey, draft, onApiFallback, setProgressFn) {
+  function generateChatDigestFromTranscript(transcript, apiKey, draft, onApiFallback, setProgressFn) {
     var fallback = { text: draft || '', fromApi: false, errorReason: null };
     if (!transcript || typeof transcript !== 'string') return Promise.resolve(fallback);
     transcript = transcript.trim();
@@ -263,87 +350,89 @@
 
     try {
       if (typeof console !== 'undefined' && console.log) {
-        console.log('[Snapshot Debug] generateMeetingNotesFromTranscript: API input is TRANSCRIPT only (no draft). length=' + transcript.length + ' preview (first 500 chars):', transcript.slice(0, 500));
+        console.log('[Snapshot Debug] generateChatDigestFromTranscript: TRANSCRIPT only (no draft). length=' + transcript.length + ' head:', transcript.slice(0, 400));
       }
     } catch (_) {}
 
     function validateAndReturn(content, lastError) {
-      if (!content || !isValidPolishedStructure(content)) {
-        try { if (console && console.log) console.log('[Snapshot Debug] API result rejected: invalid structure', lastError || ''); } catch (_) {}
+      if (!content || !isValidDigestStructure(content)) {
+        try { if (console && console.log) console.log('[Snapshot Debug] API result rejected: invalid digest structure', lastError || ''); } catch (_) {}
         fallback.errorReason = lastError || 'Invalid format';
         if (typeof onApiFallback === 'function') onApiFallback(fallback.errorReason);
         return fallback;
       }
-      if (!isTopicSectionReasonable(content)) {
-        try { if (console && console.log) console.log('[Snapshot Debug] API result rejected: Topic too long or contains pasted content'); } catch (_) {}
-        fallback.errorReason = 'Summary too long; using basic version.';
+      if (!isCoreQuestionSectionReasonable(content)) {
+        try { if (console && console.log) console.log('[Snapshot Debug] API result rejected: Core Question section too long or malformed'); } catch (_) {}
+        fallback.errorReason = 'Digest format invalid; using fallback.';
         if (typeof onApiFallback === 'function') onApiFallback(fallback.errorReason);
         return fallback;
       }
-      try { if (console && console.log) console.log('[Snapshot Debug] Using API meeting notes (validation passed)'); } catch (_) {}
+      try { if (console && console.log) console.log('[Snapshot Debug] Using API Chat Digest (validation passed)'); } catch (_) {}
       return { text: content, fromApi: true };
     }
 
-    function parseMeetingJson(raw) {
-      if (!raw || typeof raw !== 'string') return null;
-      var s = raw.trim().replace(/^```(?:json)?\s*|```$/g, '').trim();
-      try {
-        var o = JSON.parse(s);
-        return o && typeof o === 'object' ? o : null;
-      } catch (_) { return null; }
+    function apiFailureReason(errMsg, httpStatus) {
+      if (isOpenAIApiKeyAuthError(errMsg, httpStatus)) return 'Invalid API key';
+      if (isOpenAIRateLimitError(errMsg, httpStatus)) return 'Rate limit';
+      return errMsg || 'API error';
     }
 
     if (transcript.length > CHUNK_THRESHOLD) {
-      progress(20, 'Summarizing long chat…');
+      progress(15, 'Digesting long chat…');
       var chunks = [];
       for (var i = 0; i < transcript.length; i += CHUNK_SIZE) {
         chunks.push(transcript.slice(i, i + CHUNK_SIZE));
       }
       var segmentPromises = chunks.map(function (chunk) {
-        return callOpenAI(apiKey, SEGMENT_SUMMARY_PROMPT, chunk, 400, SUMMARY_MODEL);
+        return callOpenAI(apiKey, DIGEST_SEGMENT_PROMPT, chunk, 550, SUMMARY_MODEL);
       });
       return Promise.all(segmentPromises)
         .then(function (results) {
-          progress(55, 'Merging segments…');
+          progress(55, 'Merging digest segments…');
           var lastErr = null;
+          var lastStatus = 0;
           var segments = [];
           for (var s = 0; s < results.length; s++) {
             if (results[s].error) lastErr = results[s].error;
+            if (typeof results[s].status === 'number') lastStatus = results[s].status;
+            if (isOpenAIApiKeyAuthError(results[s].error, results[s].status)) {
+              fallback.errorReason = 'Invalid API key';
+              if (typeof onApiFallback === 'function') onApiFallback(fallback.errorReason);
+              progress(100, null);
+              return Promise.resolve(fallback);
+            }
+            if (isOpenAIRateLimitError(results[s].error, results[s].status)) {
+              fallback.errorReason = 'Rate limit';
+              if (typeof onApiFallback === 'function') onApiFallback(fallback.errorReason);
+              progress(100, null);
+              return Promise.resolve(fallback);
+            }
             if (results[s].content) segments.push(results[s].content);
           }
           if (segments.length === 0) {
-            fallback.errorReason = lastErr || 'Chunk API failed';
+            fallback.errorReason = apiFailureReason(lastErr, lastStatus) || 'Segment API failed';
             if (typeof onApiFallback === 'function') onApiFallback(fallback.errorReason);
             progress(100, null);
-            return fallback;
+            return Promise.resolve(fallback);
           }
-          var combined = 'Segment summaries:\n\n' + segments.join('\n\n---\n\n');
-          return callOpenAI(apiKey, MERGE_NOTES_PROMPT, combined, 900, SUMMARY_MODEL);
+          var combined = 'Segment extractions (chronological order):\n\n' + segments.join('\n\n---\n\n');
+          return callOpenAI(apiKey, DIGEST_MERGE_PROMPT, combined, 2000, SUMMARY_MODEL);
         })
         .then(function (result) {
-          var content = (result && result.content) ? result.content : '';
+          if (result && result.fromApi === false) {
+            return result;
+          }
+          var content = (result && result.content) ? result.content.trim() : '';
           var err = (result && result.error) ? result.error : null;
+          var st = (result && typeof result.status === 'number') ? result.status : 0;
           if (!content) {
-            fallback.errorReason = err || 'Merge failed';
+            fallback.errorReason = apiFailureReason(err, st) || 'Merge failed';
             if (typeof onApiFallback === 'function') onApiFallback(fallback.errorReason);
             progress(100, null);
             return fallback;
           }
-          progress(75, 'Polishing…');
-          return callOpenAI(apiKey, POLISH_MEETING_NOTES_PROMPT, content, 900, SUMMARY_MODEL)
-            .then(function (polishResult) {
-              var polished = (polishResult && polishResult.content) ? polishResult.content.trim() : '';
-              if (polished && isValidPolishedStructure(polished) && isTopicSectionReasonable(polished)) {
-                progress(100, null);
-                return validateAndReturn(polished, null);
-              }
-              progress(100, null);
-              return validateAndReturn(content, err);
-            })
-            .catch(function () {
-              progress(100, null);
-              return validateAndReturn(content, err);
-            });
+          progress(100, null);
+          return validateAndReturn(content, err);
         })
         .catch(function () {
           fallback.errorReason = 'Request failed';
@@ -353,56 +442,19 @@
         });
     }
 
-    progress(25, 'Step 1/3: Extracting structure…');
-    return callOpenAI(apiKey, EXTRACT_MEETING_JSON_PROMPT, transcript, 600, SUMMARY_MODEL)
+    progress(35, 'Generating Chat Digest…');
+    var userMsg = 'Full conversation transcript (User / Assistant turns, chronological):\n\n' + transcript;
+    return callOpenAI(apiKey, DIGEST_SYSTEM_PROMPT, userMsg, 2000, SUMMARY_MODEL)
       .then(function (result) {
-        progress(45, null);
-        if (result.error && typeof console !== 'undefined' && console.log) console.log('[Snapshot Debug] Pass 1 error:', result.error);
-        if (!result.content) {
-          fallback.errorReason = result.error || 'API error';
-          if (typeof onApiFallback === 'function') onApiFallback(fallback.errorReason);
-          progress(100, null);
-          return fallback;
-        }
-        var json = parseMeetingJson(result.content);
-        if (!json || !json.topic) {
-          fallback.errorReason = 'Invalid JSON from API';
-          if (typeof onApiFallback === 'function') onApiFallback(fallback.errorReason);
-          progress(100, null);
-          return fallback;
-        }
-        progress(50, 'Step 2/3: Writing notes…');
-        var jsonStr = JSON.stringify(json);
-        return callOpenAI(apiKey, JSON_TO_MEETING_NOTES_PROMPT, jsonStr, 800, SUMMARY_MODEL);
-      })
-      .then(function (result) {
-        if (!result) {
-          progress(100, null);
-          return fallback;
-        }
-        var content = (result.content) ? result.content : '';
-        var err = (result.error) ? result.error : null;
+        progress(100, null);
+        if (result.error && typeof console !== 'undefined' && console.log) console.log('[Snapshot Debug] Digest API error:', result.error);
+        var content = (result && result.content) ? result.content.trim() : '';
         if (!content) {
-          fallback.errorReason = err || 'API error';
+          fallback.errorReason = apiFailureReason(result.error, result.status);
           if (typeof onApiFallback === 'function') onApiFallback(fallback.errorReason);
-          progress(100, null);
           return fallback;
         }
-        progress(75, 'Step 3/3: Polishing…');
-        return callOpenAI(apiKey, POLISH_MEETING_NOTES_PROMPT, content, 900, SUMMARY_MODEL)
-          .then(function (polishResult) {
-            var polished = (polishResult && polishResult.content) ? polishResult.content.trim() : '';
-            if (polished && isValidPolishedStructure(polished) && isTopicSectionReasonable(polished)) {
-              progress(100, null);
-              return validateAndReturn(polished, null);
-            }
-            progress(100, null);
-            return validateAndReturn(content, err);
-          })
-          .catch(function () {
-            progress(100, null);
-            return validateAndReturn(content, err);
-          });
+        return validateAndReturn(content, result.error);
       })
       .catch(function () {
         fallback.errorReason = 'Request failed';
@@ -413,7 +465,7 @@
   }
 
   /**
-   * Summary mode API path: get apiKey and transcript from messages, call generateMeetingNotesFromTranscript.
+   * Summary mode API path: full transcript (no tail cut), call generateChatDigestFromTranscript.
    * Draft is only used as fallback; API never receives draft.
    * @param {function(string)} [setStatusFn] - Optional; called when no key so UI can show reason.
    * @param {function(number, string|null)} [setProgressFn] - Optional. (pct 0-100, statusText). Shown during API steps.
@@ -436,21 +488,21 @@
             }
           }
           if (!apiKey) {
-            try { if (console && console.log) console.log('[Snapshot Debug] No API key — using draft.'); } catch (_) {}
-            if (typeof setStatusFn === 'function') setStatusFn('No API key — using basic summary.');
-            resolve(fallback);
+            try { if (console && console.log) console.log('[Snapshot Debug] No API key — Chat Digest not generated.'); } catch (_) {}
+            if (typeof setStatusFn === 'function') setStatusFn('Add your OpenAI API key to generate a Chat Digest.');
+            resolve({ text: '', fromApi: false, errorReason: 'No API key' });
             return;
           }
-          var transcript = formatTranscript(messages);
+          var transcript = formatFullTranscript(messages);
           if (!transcript) {
-            if (typeof setStatusFn === 'function') setStatusFn('No transcript — using basic summary.');
-            resolve(fallback);
+            if (typeof setStatusFn === 'function') setStatusFn('No transcript extracted — scroll the chat and try again.');
+            resolve({ text: '', fromApi: false, errorReason: 'No transcript extracted' });
             return;
           }
-          try { if (console && console.log) console.log('[Snapshot Debug] Calling API with transcript, length=' + transcript.length); } catch (_) {}
-          try { if (typeof setProgressFn === 'function') setProgressFn(20, 'Calling API for meeting notes…'); } catch (_) {}
-          if (typeof setStatusFn === 'function') setStatusFn('Calling API for meeting notes…');
-          generateMeetingNotesFromTranscript(transcript, apiKey, draft, onApiFallback, setProgressFn)
+          try { if (console && console.log) console.log('[Snapshot Debug] Calling API with full transcript, length=' + transcript.length); } catch (_) {}
+          try { if (typeof setProgressFn === 'function') setProgressFn(20, 'Generating Chat Digest…'); } catch (_) {}
+          if (typeof setStatusFn === 'function') setStatusFn('Generating Chat Digest…');
+          generateChatDigestFromTranscript(transcript, apiKey, draft, onApiFallback, setProgressFn)
             .then(resolve)
             .catch(function (err) {
               try { if (console && console.log) console.log('[Snapshot Debug] runSummaryWithTranscript inner catch:', err); } catch (_) {}
@@ -482,11 +534,135 @@
     } catch (_) {}
   }
 
+  function resetDigestModalHint() {
+    try {
+      if (digestModalHintEl) digestModalHintEl.textContent = DEFAULT_DIGEST_MODAL_HINT;
+    } catch (_) {}
+  }
+
+  function hideDigestAlternateKeyOption() {
+    try {
+      if (digestApiKeyOptionRow) {
+        digestApiKeyOptionRow.hidden = true;
+        digestApiKeyOptionRow.setAttribute('aria-hidden', 'true');
+      }
+    } catch (_) {}
+  }
+
+  function hideApiViewRunDigestBtn() {
+    try {
+      if (summaryChoiceRunDigestBtn) summaryChoiceRunDigestBtn.hidden = true;
+    } catch (_) {}
+  }
+
+  function showDigestAlternateKeyOption() {
+    try {
+      if (digestApiKeyOptionRow) {
+        digestApiKeyOptionRow.hidden = false;
+        digestApiKeyOptionRow.setAttribute('aria-hidden', 'false');
+      }
+    } catch (_) {}
+  }
+
+  /**
+   * Open digest modal on the API key step without clearing storage (optional switch after rate limit).
+   * @param {boolean} [rateLimitContext]
+   */
+  function openSummaryChoiceModalForAlternateKey(rateLimitContext) {
+    digestModalStayOnApiAfterSave = !!rateLimitContext;
+    hideApiViewRunDigestBtn();
+    try {
+      chrome.storage.local.get(OPENAI_API_KEY_STORAGE, function (stored) {
+        var key = (stored && stored[OPENAI_API_KEY_STORAGE]) ? String(stored[OPENAI_API_KEY_STORAGE]).trim() : '';
+        if (openaiKeyEl) openaiKeyEl.value = key;
+        if (digestModalHintEl) {
+          digestModalHintEl.textContent = rateLimitContext
+            ? 'This key hit a rate limit. Paste a key from another OpenAI account (separate limits), or edit the key below and click Done.'
+            : DEFAULT_DIGEST_MODAL_HINT;
+        }
+        if (summaryChoiceReadyViewEl) summaryChoiceReadyViewEl.classList.remove('visible');
+        if (summaryChoiceApiViewEl) summaryChoiceApiViewEl.classList.add('visible');
+        if (summaryChoiceTutorialToggle) summaryChoiceTutorialToggle.setAttribute('aria-expanded', 'false');
+        if (summaryChoiceTutorialBody) summaryChoiceTutorialBody.hidden = true;
+        if (summaryChoiceApiStatusEl) {
+          summaryChoiceApiStatusEl.textContent = '';
+          summaryChoiceApiStatusEl.classList.remove('verifying');
+        }
+        if (summaryChoiceOverlayEl) {
+          summaryChoiceOverlayEl.classList.add('visible');
+          summaryChoiceOverlayEl.setAttribute('aria-hidden', 'false');
+        }
+      });
+    } catch (_) {}
+  }
+
   function openSummaryChoiceModal() {
     try {
-      if (summaryChoiceButtonsViewEl) summaryChoiceButtonsViewEl.classList.remove('hidden');
+      digestModalStayOnApiAfterSave = false;
+      hideApiViewRunDigestBtn();
+      resetDigestModalHint();
+      chrome.storage.local.get(OPENAI_API_KEY_STORAGE, function (stored) {
+        var key = (stored && stored[OPENAI_API_KEY_STORAGE]) ? String(stored[OPENAI_API_KEY_STORAGE]).trim() : '';
+        if (openaiKeyEl && key) openaiKeyEl.value = key;
+        if (summaryChoiceApiViewEl) summaryChoiceApiViewEl.classList.remove('visible');
+        if (summaryChoiceReadyViewEl) summaryChoiceReadyViewEl.classList.remove('visible');
+        if (key) {
+          if (summaryChoiceReadyMessageEl) summaryChoiceReadyMessageEl.textContent = 'Ready to generate your Chat Digest.';
+          if (summaryChoiceReadyViewEl) summaryChoiceReadyViewEl.classList.add('visible');
+        } else {
+          if (summaryChoiceApiViewEl) summaryChoiceApiViewEl.classList.add('visible');
+          if (summaryChoiceTutorialToggle) summaryChoiceTutorialToggle.setAttribute('aria-expanded', 'false');
+          if (summaryChoiceTutorialBody) summaryChoiceTutorialBody.hidden = true;
+        }
+        if (summaryChoiceOverlayEl) {
+          summaryChoiceOverlayEl.classList.add('visible');
+          summaryChoiceOverlayEl.setAttribute('aria-hidden', 'false');
+        }
+      });
+    } catch (_) {}
+  }
+
+  function closeSummaryChoiceModal() {
+    try {
+      digestModalStayOnApiAfterSave = false;
+      hideApiViewRunDigestBtn();
+      resetDigestModalHint();
+      if (summaryChoiceOverlayEl) {
+        summaryChoiceOverlayEl.classList.remove('visible');
+        summaryChoiceOverlayEl.setAttribute('aria-hidden', 'true');
+      }
       if (summaryChoiceApiViewEl) summaryChoiceApiViewEl.classList.remove('visible');
       if (summaryChoiceReadyViewEl) summaryChoiceReadyViewEl.classList.remove('visible');
+    } catch (_) {}
+  }
+
+  /**
+   * Clear saved key and open the digest modal on the API key field so the user can paste a new key.
+   */
+  function openSummaryChoiceModalForRekey() {
+    try {
+      digestModalStayOnApiAfterSave = false;
+      hideApiViewRunDigestBtn();
+      if (digestModalHintEl) {
+        digestModalHintEl.textContent = 'Your API key was rejected. Enter a valid OpenAI API key below, then click Done.';
+      }
+      if (openaiKeyEl) openaiKeyEl.value = '';
+      chrome.storage.local.remove(OPENAI_API_KEY_STORAGE, function () {
+        try { updateSummaryModeStatus(); } catch (_) {}
+      });
+    } catch (_) {}
+    try {
+      if (summaryChoiceReadyViewEl) summaryChoiceReadyViewEl.classList.remove('visible');
+      if (summaryChoiceApiViewEl) summaryChoiceApiViewEl.classList.add('visible');
+      if (summaryChoiceTutorialToggle) summaryChoiceTutorialToggle.setAttribute('aria-expanded', 'false');
+      if (summaryChoiceTutorialBody) summaryChoiceTutorialBody.hidden = true;
+      if (summaryChoiceApiStatusEl) {
+        summaryChoiceApiStatusEl.textContent = '';
+        summaryChoiceApiStatusEl.classList.remove('verifying');
+      }
+      if (summaryChoiceReadyMessageEl) {
+        summaryChoiceReadyMessageEl.textContent = 'Enter a new API key below, then Done.';
+      }
       if (summaryChoiceOverlayEl) {
         summaryChoiceOverlayEl.classList.add('visible');
         summaryChoiceOverlayEl.setAttribute('aria-hidden', 'false');
@@ -494,20 +670,8 @@
     } catch (_) {}
   }
 
-  function closeSummaryChoiceModal() {
-    try {
-      if (summaryChoiceOverlayEl) {
-        summaryChoiceOverlayEl.classList.remove('visible');
-        summaryChoiceOverlayEl.setAttribute('aria-hidden', 'true');
-      }
-      if (summaryChoiceButtonsViewEl) summaryChoiceButtonsViewEl.classList.remove('hidden');
-      if (summaryChoiceApiViewEl) summaryChoiceApiViewEl.classList.remove('visible');
-      if (summaryChoiceReadyViewEl) summaryChoiceReadyViewEl.classList.remove('visible');
-    } catch (_) {}
-  }
-
   /**
-   * Update Summary mode status block: show Basic / AI Enhanced and note when no key.
+   * Update Summary mode status block when present in DOM (optional).
    * Only visible when mode === 'summary'.
    */
   function updateSummaryModeStatus() {
@@ -541,6 +705,9 @@
       if (btnSummarize) {
         btnSummarize.classList.toggle('selected', m === 'summary');
         btnSummarize.setAttribute('aria-pressed', m === 'summary' ? 'true' : 'false');
+      }
+      if (m === 'continue') {
+        hideDigestAlternateKeyOption();
       }
       if (outEl) {
         outEl.placeholder = (PLACEHOLDER[m] || PLACEHOLDER.continue);
@@ -702,11 +869,90 @@
   }
 
   /**
+   * After messages are extracted, run API Chat Digest (summary mode only).
+   * @param {string} exportMode
+   * @param {Array} messages
+   * @param {string} md - Fallback markdown from buildContinuationSnapshotMarkdown (API failure only)
+   */
+  function runSummaryDigestFlow(exportMode, messages, md) {
+    setProgressPercent(20);
+    setStatus('Generating Chat Digest…');
+    var progressFn = function (pct, text) {
+      setProgressPercent(pct);
+      if (text != null) setStatus(text);
+    };
+    runSummaryWithTranscript(messages, md, function (errMsg) {
+      var authHint = errMsg && isOpenAIApiKeyAuthError(errMsg, 0);
+      var rateHint = errMsg && (errMsg === 'Rate limit' || isOpenAIRateLimitError(errMsg, 0));
+      showToast(
+        authHint ? 'Your API key is invalid or expired. Please enter a new key.'
+          : rateHint ? 'Rate limit: wait a moment and try again.'
+            : (errMsg || 'Chat Digest unavailable — check your API key or try again.')
+      );
+    }, setStatus, progressFn).then(function (result) {
+      hideProgress();
+      var polished = result && result.text ? result.text : '';
+      var fromApi = !!(result && result.fromApi);
+      var reason = (result && result.errorReason) ? String(result.errorReason) : '';
+      var keyRejected = reason === 'Invalid API key' || isOpenAIApiKeyAuthError(reason, 0);
+      var rateLimited = reason === 'Rate limit' || isOpenAIRateLimitError(reason, 0);
+      if (keyRejected) {
+        try { if (console && console.log) console.log('[Snapshot Debug] Stored API key invalid or expired; prompting re-entry.'); } catch (_) {}
+        hideDigestAlternateKeyOption();
+        lastSummaryOutput = '';
+        setMode(exportMode);
+        setOutput('');
+        setButtons(false);
+        setStatus('Your API key is invalid or expired. Please enter a new key.');
+        showToast('Your API key is invalid or expired. Please enter a new key.');
+        openSummaryChoiceModalForRekey();
+        setBusy(false);
+        return;
+      }
+      if (rateLimited) {
+        try { if (console && console.log) console.log('[Snapshot Debug] OpenAI rate limit; omitting digest placeholder.'); } catch (_) {}
+        lastSummaryOutput = '';
+        setMode(exportMode);
+        setOutput('');
+        setButtons(false);
+        showDigestAlternateKeyOption();
+        setStatus('OpenAI rate limit reached. Wait and try again, or use a different API key below.');
+        showToast('Rate limit: try again in a few seconds, or switch API key.');
+        setBusy(false);
+        return;
+      }
+      hideDigestAlternateKeyOption();
+      lastSummaryOutput = polished;
+      setMode(exportMode);
+      if (fromApi) {
+        setStatus('Egg is served! (' + messages.length + ' msgs)');
+      } else if (!polished) {
+        if (reason === 'No API key') {
+          setStatus('Add your OpenAI API key to generate a Chat Digest.');
+        } else {
+          setStatus('Chat Digest unavailable. ' + (reason ? '(' + reason + ')' : 'Try again.'));
+        }
+      } else {
+        setStatus('Chat Digest incomplete — showing fallback. ' + (reason ? '(' + reason + ')' : ''));
+      }
+      setBusy(false);
+      if (polished) saveToCarton(polished);
+    }).catch(function (err) {
+      hideProgress();
+      try { if (console && console.log) console.log('[Snapshot Debug] runSummary digest catch:', err); } catch (_) {}
+      setStatus('Chat Digest failed. ' + (err && err.message ? err.message : 'Please try again.'));
+      setBusy(false);
+    });
+  }
+
+  /**
    * Run full snapshot extraction and build snapshot with the given export mode.
    * @param {string} exportMode - 'continue' | 'summary'
-   * @param {{ basicOnly?: boolean }} [opts] - basicOnly: true = summary without AI polish (use draft only)
    */
-  function runFull(exportMode, opts) {
+  function runFull(exportMode) {
+    if (exportMode === 'summary') {
+      hideDigestAlternateKeyOption();
+    }
     setStatus('Rolling...');
     setOutput('');
     setButtons(false);
@@ -750,40 +996,7 @@
             setBusy(false);
             if (md) saveToCarton(md);
           } else {
-            var basicOnly = !!(opts && opts.basicOnly);
-            if (basicOnly) {
-              hideProgress();
-              lastSummaryOutput = md;
-              setMode(exportMode);
-              setStatus('Egg is served! (' + messages.length + ' msgs)');
-              setBusy(false);
-              if (md) saveToCarton(md);
-            } else {
-              setProgressPercent(20);
-              setStatus('Calling API for meeting notes…');
-              var progressFn = function (pct, text) {
-                setProgressPercent(pct);
-                if (text != null) setStatus(text);
-              };
-              runSummaryWithTranscript(messages, md, function (errMsg) {
-                showToast(errMsg || 'AI polish unavailable — showing basic summary.');
-              }, setStatus, progressFn).then(function (result) {
-                hideProgress();
-                var polished = result && result.text ? result.text : '';
-                var fromApi = !!(result && result.fromApi);
-                var reason = (result && result.errorReason) ? String(result.errorReason) : '';
-                lastSummaryOutput = polished;
-                setMode(exportMode);
-                setStatus(fromApi ? 'Egg is served! (' + messages.length + ' msgs)' : 'Using basic summary. ' + (reason ? '(' + reason + ')' : '(API failed or unavailable)'));
-                setBusy(false);
-                if (polished) saveToCarton(polished);
-              }).catch(function (err) {
-                hideProgress();
-                try { if (console && console.log) console.log('[Snapshot Debug] runSummary summary path catch:', err); } catch (_) {}
-                setStatus('Summary failed. ' + (err && err.message ? err.message : 'Please try again.'));
-                setBusy(false);
-              });
-            }
+            runSummaryDigestFlow(exportMode, messages, md);
           }
         }
       } catch (_) {}
@@ -838,40 +1051,7 @@
           setBusy(false);
           if (md) saveToCarton(md);
         } else {
-          var basicOnly = !!(opts && opts.basicOnly);
-          if (basicOnly) {
-            hideProgress();
-            lastSummaryOutput = md;
-            setMode(exportMode);
-            setStatus('Egg is served! (' + messages.length + ' msgs)');
-            setBusy(false);
-            if (md) saveToCarton(md);
-          } else {
-            setProgressPercent(20);
-            setStatus('Calling API for meeting notes…');
-            var progressFn = function (pct, text) {
-              setProgressPercent(pct);
-              if (text != null) setStatus(text);
-            };
-            runSummaryWithTranscript(messages, md, function (errMsg) {
-              showToast(errMsg || 'AI polish unavailable — showing basic summary.');
-            }, setStatus, progressFn).then(function (result) {
-              hideProgress();
-              var polished = result && result.text ? result.text : '';
-              var fromApi = !!(result && result.fromApi);
-              var reason = (result && result.errorReason) ? String(result.errorReason) : '';
-              lastSummaryOutput = polished;
-              setMode(exportMode);
-              setStatus(fromApi ? 'Egg is served! (' + messages.length + ' msgs)' : 'Using basic summary. ' + (reason ? '(' + reason + ')' : '(API failed or unavailable)'));
-              setBusy(false);
-              if (polished) saveToCarton(polished);
-            }).catch(function (err) {
-              hideProgress();
-              try { if (console && console.log) console.log('[Snapshot Debug] runSummary full path catch:', err); } catch (_) {}
-              setStatus('Summary failed. ' + (err && err.message ? err.message : 'Please try again.'));
-              setBusy(false);
-            });
-          }
+          runSummaryDigestFlow(exportMode, messages, md);
         }
       })
       .catch(function (err) {
@@ -897,7 +1077,7 @@
 
   /**
    * Convert summary markdown to Word-friendly HTML. Recognizes #/## headings, **bold**, and bullet lists.
-   * Returns a full HTML document ready to save as .doc for a ready-to-submit meeting report.
+   * Returns a full HTML document ready to save as .doc for Chat Digest export.
    */
   function summaryMarkdownToWordHtml(md) {
     if (!md || typeof md !== 'string') return '';
@@ -951,7 +1131,7 @@
     }
     if (inList) out.push('</ul>');
     var bodyHtml = out.join('\n');
-    return '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="utf-8"/>\n<meta name="ProgId" content="Word.Document"/>\n<title>Meeting Summary</title>\n<style>\nbody{font-family:Calibri,Arial,sans-serif;font-size:11pt;line-height:1.4;margin:1in;}\nh1{font-size:16pt;font-weight:bold;margin:0 0 12pt 0;}\nh2{font-size:12pt;font-weight:bold;margin:12pt 0 6pt 0;}\nh3{font-size:11pt;font-weight:bold;margin:8pt 0 4pt 0;}p,li{margin:0 0 6pt 0;}ul{margin:0 0 6pt 0;padding-left:24pt;}\n</style>\n</head>\n<body>\n' + bodyHtml + '\n</body>\n</html>';
+    return '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="utf-8"/>\n<meta name="ProgId" content="Word.Document"/>\n<title>Chat Digest</title>\n<style>\nbody{font-family:Calibri,Arial,sans-serif;font-size:11pt;line-height:1.4;margin:1in;}\nh1{font-size:16pt;font-weight:bold;margin:0 0 12pt 0;}\nh2{font-size:12pt;font-weight:bold;margin:12pt 0 6pt 0;}\nh3{font-size:11pt;font-weight:bold;margin:8pt 0 4pt 0;}p,li{margin:0 0 6pt 0;}ul{margin:0 0 6pt 0;padding-left:24pt;}\n</style>\n</head>\n<body>\n' + bodyHtml + '\n</body>\n</html>';
   }
 
   function downloadOutput() {
@@ -966,7 +1146,7 @@
     var exportMode = (lastExportMode === 'summary') ? 'summary' : 'continue';
     var blob, name, mimeType;
     if (exportMode === 'summary') {
-      name = 'meeting-summary-' + datePart + '.doc';
+      name = 'chat-digest-' + datePart + '.doc';
       var wordHtml = summaryMarkdownToWordHtml(text);
       blob = new Blob([wordHtml], { type: 'application/msword;charset=utf-8' });
     } else {
@@ -1114,7 +1294,7 @@
 
   if (closeDrawerBtn) closeDrawerBtn.addEventListener('click', closeDrawer);
 
-  // Load / save OpenAI API key for optional Summary polish
+  // Load / save OpenAI API key for Chat Digest (Summarize)
   if (openaiKeyEl) {
     try {
       chrome.storage.local.get(OPENAI_API_KEY_STORAGE, function (stored) {
@@ -1144,26 +1324,29 @@
   // ========== Main Event Listeners ==========
 
   if (btnContinue) btnContinue.addEventListener('click', function () {
-    summaryChoice = null;
     setMode('continue');
     runFull('continue');
   });
   if (btnSummarize) btnSummarize.addEventListener('click', function () {
     setMode('summary');
-    openSummaryChoiceModal();
+    try {
+      chrome.storage.local.get(OPENAI_API_KEY_STORAGE, function (stored) {
+        var key = (stored && stored[OPENAI_API_KEY_STORAGE]) ? String(stored[OPENAI_API_KEY_STORAGE]).trim() : '';
+        if (!key && openaiKeyEl) key = String(openaiKeyEl.value || '').trim();
+        if (key) {
+          runFull('summary');
+        } else {
+          openSummaryChoiceModal();
+        }
+      });
+    } catch (_) {
+      openSummaryChoiceModal();
+    }
   });
   if (startSummarizeBtn) startSummarizeBtn.addEventListener('click', function () {
-    runFull('summary', { basicOnly: summaryChoice === 'ai' });
+    runFull('summary');
   });
 
-  if (summaryChoiceHumanBtn) summaryChoiceHumanBtn.addEventListener('click', function () {
-    summaryChoice = 'human';
-    if (summaryChoiceButtonsViewEl) summaryChoiceButtonsViewEl.classList.add('hidden');
-    if (summaryChoiceApiViewEl) summaryChoiceApiViewEl.classList.add('visible');
-    if (summaryChoiceReadyViewEl) summaryChoiceReadyViewEl.classList.remove('visible');
-    if (summaryChoiceTutorialToggle) summaryChoiceTutorialToggle.setAttribute('aria-expanded', 'false');
-    if (summaryChoiceTutorialBody) summaryChoiceTutorialBody.hidden = true;
-  });
   if (summaryChoiceTutorialToggle && summaryChoiceTutorialBody) {
     summaryChoiceTutorialToggle.addEventListener('click', function () {
       var expanded = summaryChoiceTutorialToggle.getAttribute('aria-expanded') === 'true';
@@ -1193,19 +1376,33 @@
           showToast(result.error || 'Invalid API key');
           return;
         }
-        if (summaryChoiceApiStatusEl) {
-          summaryChoiceApiStatusEl.textContent = 'Success!';
-          summaryChoiceApiStatusEl.classList.remove('verifying');
-        }
         showToast('API key saved');
-        summaryChoice = 'human';
         try {
           var o = {};
           o[OPENAI_API_KEY_STORAGE] = val;
           chrome.storage.local.set(o);
         } catch (_) {}
+        try {
+          updateSummaryModeStatus();
+        } catch (_) {}
+
+        if (digestModalStayOnApiAfterSave) {
+          if (summaryChoiceApiStatusEl) {
+            summaryChoiceApiStatusEl.textContent = 'Key saved. You can edit the field above and click Done again, or tap Generate below.';
+            summaryChoiceApiStatusEl.classList.remove('verifying');
+          }
+          if (summaryChoiceApiViewEl) summaryChoiceApiViewEl.classList.add('visible');
+          if (summaryChoiceReadyViewEl) summaryChoiceReadyViewEl.classList.remove('visible');
+          if (summaryChoiceRunDigestBtn) summaryChoiceRunDigestBtn.hidden = false;
+          return;
+        }
+
+        if (summaryChoiceApiStatusEl) {
+          summaryChoiceApiStatusEl.textContent = 'Success!';
+          summaryChoiceApiStatusEl.classList.remove('verifying');
+        }
         if (summaryChoiceApiViewEl) summaryChoiceApiViewEl.classList.remove('visible');
-        if (summaryChoiceReadyMessageEl) summaryChoiceReadyMessageEl.textContent = 'API key saved. Ready to generate.';
+        if (summaryChoiceReadyMessageEl) summaryChoiceReadyMessageEl.textContent = 'API key saved. Ready to generate your Chat Digest.';
         if (summaryChoiceReadyViewEl) summaryChoiceReadyViewEl.classList.add('visible');
       })
       .catch(function () {
@@ -1217,20 +1414,24 @@
         showToast('Verification failed');
       });
   });
-  if (summaryChoiceAiBtn) summaryChoiceAiBtn.addEventListener('click', function () {
-    summaryChoice = 'ai';
-    if (summaryChoiceButtonsViewEl) summaryChoiceButtonsViewEl.classList.add('hidden');
-    if (summaryChoiceReadyMessageEl) summaryChoiceReadyMessageEl.textContent = 'Basic summary only. Ready to generate.';
-    if (summaryChoiceReadyViewEl) summaryChoiceReadyViewEl.classList.add('visible');
-  });
-  function runSummaryFromModal(basicOnly) {
+  function runDigestFromModal() {
     closeSummaryChoiceModal();
     setMode('summary');
-    runFull('summary', { basicOnly: basicOnly });
+    runFull('summary');
   }
   if (summaryChoiceStartBtn) summaryChoiceStartBtn.addEventListener('click', function () {
-    runSummaryFromModal(summaryChoice === 'ai');
+    runDigestFromModal();
   });
+  if (summaryChoiceRunDigestBtn) {
+    summaryChoiceRunDigestBtn.addEventListener('click', function () {
+      runDigestFromModal();
+    });
+  }
+  if (changeOpenaiKeyBtn) {
+    changeOpenaiKeyBtn.addEventListener('click', function () {
+      openSummaryChoiceModalForAlternateKey(true);
+    });
+  }
   if (btnCopy) btnCopy.addEventListener('click', copyOutput);
   if (btnDownload) btnDownload.addEventListener('click', downloadOutput);
 

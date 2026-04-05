@@ -134,6 +134,27 @@ body {
   margin-bottom: 12px;
 }
 
+.digest-api-key-option {
+  margin: 0 0 10px;
+  text-align: center;
+}
+
+.digest-change-key-btn {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: #1a5fb4;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 4px 8px;
+}
+
+.digest-change-key-btn:hover {
+  color: #0d3d82;
+}
+
 .api-key-row {
   display: none;
   margin-bottom: 10px;
@@ -647,6 +668,16 @@ body {
 
 .summary-choice-api-status:not(.verifying) {
   color: #0a0;
+}
+
+.summary-choice-api-view .summary-choice-run-digest-btn {
+  display: none;
+  width: 100%;
+  margin-top: 10px;
+}
+
+.summary-choice-api-view .summary-choice-run-digest-btn:not([hidden]) {
+  display: block;
 }
 
 .summary-choice-api-done {

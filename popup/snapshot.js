@@ -213,66 +213,6 @@
   }
 
   /**
-   * Summary-only: build Topic as a theme description (1–2 sentences), not a quote.
-   */
-  function summaryTopicFromGoal(goalStr) {
-    if (!goalStr || typeof goalStr !== 'string') return 'Summary of the conversation.';
-    var lines = goalStr.split('\n').map(function (l) { return l.replace(/^-\s*/, '').trim(); }).filter(Boolean);
-    if (lines.length === 0 || (lines[0] || '').indexOf('No high-signal') !== -1) return 'Summary of the conversation.';
-    var first = rewriteAsNeutral(lines[0]);
-    if (!first || first.length < 15) return 'Summary of the conversation.';
-    if (lines.length >= 2) {
-      var second = rewriteAsNeutral(lines[1]);
-      if (second && second.length >= 10) return 'This conversation focused on ' + first.slice(0, 1).toLowerCase() + first.slice(1) + '. It also covered ' + second.slice(0, 1).toLowerCase() + second.slice(1).replace(/\.$/, '') + '.';
-    }
-    return 'This conversation focused on ' + first.slice(0, 1).toLowerCase() + first.slice(1).replace(/\.$/, '') + '.';
-  }
-
-  /**
-   * Summary-only: rewrite Key Discussion Points as clear bullet insights.
-   */
-  function summaryKeyPointsFromCurrent(currentStr) {
-    if (!currentStr || typeof currentStr !== 'string') return '- (No discussion points extracted.)';
-    var lines = currentStr.split('\n').map(function (l) { return l.replace(/^[-*]\s*/, '').trim(); }).filter(Boolean).slice(0, 5);
-    if (lines.length === 0 || (lines[0] || '').indexOf('Derived from') !== -1) return '- (No discussion points extracted.)';
-    var out = lines.map(function (l) { var n = rewriteAsNeutral(l); return n ? '- ' + n : ''; }).filter(Boolean);
-    return out.length ? out.join('\n') : '- (No discussion points extracted.)';
-  }
-
-  /**
-   * Summary-only: rewrite Decisions as neutral outcomes.
-   */
-  function summaryConclusionsFromDecisions(decisionsStr) {
-    if (!decisionsStr || typeof decisionsStr !== 'string' || decisionsStr.indexOf('None extracted') !== -1) return '- (None.)';
-    var lines = decisionsStr.split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
-    var out = lines.map(function (l) { var n = rewriteAsNeutral(l); return n ? '- ' + n : ''; }).filter(Boolean);
-    return out.length ? out.join('\n') : '- (None.)';
-  }
-
-  /**
-   * Summary-only: rewrite Next Steps as neutral task list.
-   */
-  function summaryNextStepsFromActions(actionItemsStr) {
-    if (!actionItemsStr || typeof actionItemsStr !== 'string' || actionItemsStr.indexOf('None extracted') !== -1) return '';
-    var lines = actionItemsStr.split('\n').map(function (l) { return l.replace(/^-\s*/, '').trim(); }).filter(Boolean);
-    var out = lines.map(function (l) { var n = rewriteAsNeutral(l); return n ? '- ' + n : ''; }).filter(Boolean);
-    return out.join('\n');
-  }
-
-  /**
-   * Summary-only: one short background sentence, distinct from Topic.
-   */
-  function summaryContextLine(goalStr, topicStr) {
-    if (!goalStr || typeof goalStr !== 'string') return '';
-    var lines = goalStr.split('\n').map(function (l) { return l.replace(/^-\s*/, '').trim(); }).filter(Boolean);
-    if (lines.length < 2 || (lines[0] || '').indexOf('No high-signal') !== -1) return '';
-    var second = rewriteAsNeutral(lines[1]);
-    if (!second || second.length < 15) return '';
-    if (second.length > 100) second = second.slice(0, 97) + '…';
-    return 'Background: ' + second.slice(0, 1).toLowerCase() + second.slice(1).replace(/\.$/, '') + '.';
-  }
-
-  /**
    * Goal: first 20 messages, top-scoring, high-signal only. Prefer user when scores similar.
    */
   function buildGoal(messages) {
@@ -318,7 +258,7 @@
   function buildCurrentState(messages) {
     var arr = messages || [];
     var n = arr.length;
-    var from = Math.floor(n * 0.3);
+    var from = Math.max(20, Math.floor(n * 0.3));
     var to = Math.max(from, n - 5);
     var slice = arr.slice(from, to);
     var scored = slice.map(function (m, i) { return { msg: m, score: scoreMessage(m) }; });
@@ -359,6 +299,7 @@
     var assistantSuggestionsDropped = 0;
     var distilledCount = 0;
     var re = /[^.!?\n]*(?:must|must not|never|cannot|don't|we decided|we will use|finalized|locked in|this is implemented|this is fixed)[^.!?\n]*[.!?\n]?/gi;
+    var decisionTriggerPrefixes = ['this is implemented', 'this is fixed', 'we will use', 'we decided', 'must not', 'locked in', 'finalized', 'cannot', 'never', "don't", 'must'];
     for (var i = 0; i < arr.length; i++) {
       var c = (arr[i].content_markdown || '').trim();
       var isUser = (arr[i].role || '') === 'user';
@@ -367,6 +308,20 @@
       while ((m = re.exec(c)) !== null) {
         var s = m[0].replace(/\s+/g, ' ').trim().slice(0, 220);
         if (!s || seen[s]) continue;
+        var normalizedForGuard = s;
+        var lowerGuard = normalizedForGuard.toLowerCase();
+        var remainder = normalizedForGuard;
+        var tpi;
+        for (tpi = 0; tpi < decisionTriggerPrefixes.length; tpi++) {
+          var trg = decisionTriggerPrefixes[tpi];
+          if (lowerGuard.length >= trg.length && lowerGuard.slice(0, trg.length) === trg) {
+            remainder = normalizedForGuard.slice(trg.length);
+            break;
+          }
+        }
+        remainder = remainder.replace(/^[.,;:!?\s\x22\x27\x60-]+/, '').trim();
+        var wc = remainder.split(/\s+/).filter(function (w) { return w.length > 0; }).length;
+        if (remainder.length < 15 || wc < 3) continue;
         if (isUser) {
           seen[s] = true;
           decisionsFromUser += 1;
@@ -400,6 +355,10 @@
     var seen = {};
     var distilledCount = 0;
     for (var i = 0; i < arr.length; i++) {
+      /**
+       * Only user-authored questions count as open issues; skip assistant teaching examples and rhetorical questions.
+       */
+      if ((arr[i].role || '') !== 'user') continue;
       var c = arr[i].content_markdown || '';
       var chunks = c.split(/(?<=[.?!\n])/);
       for (var j = 0; j < chunks.length; j++) {
@@ -417,29 +376,6 @@
   }
 
   /**
-   * Action Items: TODO, FIXME, next-step style lines for summary mode.
-   */
-  function buildActionItems(messages) {
-    var arr = (messages || []).slice(-25);
-    var lines = [];
-    var seen = {};
-    var re = /(?:^|[\n])\s*(?:[-*]\s+)?([^\n]*(?:TODO|FIXME|next step|action item|we need to|need to\s+\w+)[^\n]{2,120})/gi;
-    for (var i = 0; i < arr.length; i++) {
-      var c = (arr[i].content_markdown || '').trim();
-      var m;
-      re.lastIndex = 0;
-      while ((m = re.exec(c)) !== null) {
-        var s = (m[1] || '').replace(/\s+/g, ' ').trim();
-        if (!s || s.length < 15 || seen[s]) continue;
-        seen[s] = true;
-        lines.push('- ' + s.slice(0, 200));
-      }
-    }
-    LOG('Action Items: ' + lines.length + ' items');
-    return lines.length ? lines.join('\n') : '- (None extracted.)';
-  }
-
-  /**
    * Important Artifacts: code blocks (verbatim, deduped), file names, commands, URLs.
    */
   function buildArtifacts(messages) {
@@ -450,7 +386,10 @@
     var urls = [];
     var pathRe = /(?:^|[\s\n])((?:\/|\.\/|~\/)[\w./-]+|\b[\w-]+\.(?:js|ts|tsx|jsx|py|json|md|html|css|yml|yaml|sh|bash|sql)(?:\s|$|\n))/g;
     var urlRe = /(?:\[([^\]]*)\]\((\s*https?:\/\/[^)\s]+)\)|(https?:\/\/[^\s)\]]+))/g;
-    var cmdRe = /(?:^|[\n])\s*[$#]?\s*((?:npm|yarn|pnpm|npx|git|node|python|python3|cd|ls|cat|curl|mkdir|cp|mv)\s+[^\n]+)/gm;
+    /**
+     * After command + whitespace, reject when next char is → or non-ASCII so glossary lines like "cat → kitten" are not shell commands.
+     */
+    var cmdRe = /(?:^|[\n])\s*[$#]?\s*((?:npm|yarn|pnpm|npx|git|node|python|python3|cd|ls|cat|curl|mkdir|cp|mv)\s+(?![→\u0080-\uFFFF])[^\n]+)/gm;
 
     var totalCodeBlocks = 0;
     for (var i = 0; i < (messages || []).length; i++) {
@@ -465,7 +404,14 @@
       var m;
       while ((m = pathRe.exec(c)) !== null) {
         var f = (m[1] || '').trim();
-        if (f && files.indexOf(f) === -1) files.push(f);
+        if (f
+            && f !== '//'
+            && !f.startsWith('//')
+            && f.length >= 3
+            && /\w/.test(f.replace(/^[/.\-~]+/, ''))
+            && files.indexOf(f) === -1) {
+          files.push(f);
+        }
       }
       pathRe.lastIndex = 0;
       while ((m = urlRe.exec(c)) !== null) {
@@ -532,6 +478,16 @@
         var msg = turn[k];
         var role = (msg.role === 'user' ? 'User' : 'Assistant');
         var body = (msg.content_markdown || '').trim();
+        var ASSISTANT_TOP_CAP = 800;
+        if (msg.role !== 'user' && body.indexOf('```') === -1 && body.length > ASSISTANT_TOP_CAP) {
+          var cut = body.slice(0, 600);
+          var tail = body.slice(600, 700);
+          var sentenceEnd = tail.search(/[.!?]/);
+          if (sentenceEnd !== -1) {
+            cut = cut + tail.slice(0, sentenceEnd + 1);
+          }
+          body = cut.trim() + '\n\n[…truncated for continuation; full wording in Last-stage Details]';
+        }
         parts.push('**' + role + ':**\n\n' + body);
       }
     }
@@ -561,7 +517,28 @@
     for (var j = 0; j < kept.length; j++) {
       var r = (kept[j].role === 'user' ? 'User' : 'Assistant');
       var b = (kept[j].content_markdown || '').trim();
-      parts.push('### ' + r + '\n\n' + b);
+      if (r === 'User') {
+        parts.push('### ' + r + '\n\n' + b);
+      } else {
+        var compressed = toBullets(b, 400);
+        var body;
+        if (compressed.truncated) {
+          body = compressed.out + ' (truncated)';
+        } else {
+          var outStr = compressed.out;
+          if (outStr.length > 400) {
+            var cut = outStr.slice(0, 400);
+            var lastSpace = cut.lastIndexOf(' ');
+            if (lastSpace > 300) {
+              cut = outStr.slice(0, lastSpace);
+            }
+            body = cut + '… (truncated)';
+          } else {
+            body = outStr;
+          }
+        }
+        parts.push('### ' + r + '\n\n' + body);
+      }
     }
     return parts.length ? parts.join('\n\n') : '- (No messages after filtering; see Immediate Continuation Context.)';
   }
@@ -590,8 +567,8 @@
 
   /**
    * Build snapshot Markdown. Mode: "continue" (default) or "summary".
-   * Continue mode is optimized for minimal friction handoff.
-   * Avoid adding extra structure unless benchmark testing proves necessity.
+   * Continue mode is optimized for minimal friction handoff (unchanged).
+   * Summary mode returns a minimal stub only for API-failure fallback — Chat Digest is always API-generated in the popup.
    *
    * @param {Array<{ role: "user"|"assistant", content_markdown: string }>} messages
    * @param {string} [mode] - "continue" | "summary"
@@ -602,47 +579,26 @@
     var exportMode = (mode === 'summary') ? 'summary' : 'continue';
     LOG('Phase 5 input: ' + arr.length + ' messages, mode=' + exportMode);
 
+    if (exportMode === 'summary') {
+      LOG('Phase 5 output: summary stub (digest is API-only)');
+      return [
+        '# Chat Digest',
+        '',
+        '## Digest unavailable',
+        '',
+        'This placeholder appears only when the API could not return a valid digest. Add your OpenAI API key in Summarize setup, then try again.'
+      ].join('\n');
+    }
+
     var goal = buildGoal(arr);
     var current = buildCurrentState(arr);
     var decisions = buildKeyDecisions(arr);
     var questions = buildOpenQuestions(arr);
     var artifacts = buildArtifacts(arr);
 
-    if (exportMode === 'summary') {
-      var actionItems = buildActionItems(arr);
-      var topic = summaryTopicFromGoal(goal);
-      var keyPoints = summaryKeyPointsFromCurrent(current);
-      var conclusions = summaryConclusionsFromDecisions(decisions);
-      var nextStepsRaw = summaryNextStepsFromActions(actionItems || '');
-      var hasNextSteps = nextStepsRaw.length > 0;
-      var contextLine = summaryContextLine(goal, topic);
-      var md = [
-        '# Conversation Summary',
-        '',
-        '## Topic',
-        topic,
-        '',
-        '## Key Discussion Points',
-        keyPoints,
-        '',
-        '## Decisions / Conclusions',
-        conclusions
-      ];
-      if (hasNextSteps) {
-        md.push('', '## Next Steps', nextStepsRaw);
-      }
-      if (contextLine) {
-        md.push('', '## Context Snapshot', contextLine);
-      }
-      md = md.join('\n');
-      LOG('Phase 5 output: summary snapshot built (human-readable)');
-      return md;
-    }
-
     var immediate = buildImmediateContinuationContext(arr);
     var lastStage = buildLastStage(arr, immediate.included);
     var paste = buildPasteInstructions();
-    var raw = buildRawExtract(arr);
 
     var topPart = [
       '# === CONTINUE FROM HERE ===',
@@ -677,14 +633,7 @@
       lastStage,
       '',
       '## Paste-into-New-Chat Instructions',
-      paste,
-      '',
-      '<details>',
-      '<summary>Raw Extract (Last 15 Messages)</summary>',
-      '',
-      raw,
-      '',
-      '</details>'
+      paste
     ].join('\n');
 
     var md = topPart + backgroundSections;

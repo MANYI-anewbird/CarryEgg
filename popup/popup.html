@@ -42,6 +42,10 @@
     </button>
   </div>
 
+  <div class="digest-api-key-option" id="digestApiKeyOptionRow" hidden aria-hidden="true">
+    <button type="button" id="changeOpenaiKeyBtn" class="digest-change-key-btn">Use a different API key</button>
+  </div>
+
   <div class="start-summarize-row" id="startSummarizeRow" aria-hidden="true">
     <button type="button" id="startSummarizeBtn" class="btn start-summarize-btn">Start summarize</button>
   </div>
@@ -67,17 +71,11 @@
   </div>
 
   <div class="summary-choice-overlay" id="summaryChoiceOverlay" aria-hidden="true">
-    <div class="summary-choice-modal" role="dialog" aria-labelledby="summaryChoiceTitle">
-      <div class="summary-choice-buttons-view" id="summaryChoiceButtonsView">
-        <p class="summary-choice-title" id="summaryChoiceTitle">How do you want the summary?</p>
-        <div class="summary-choice-buttons">
-          <button type="button" id="summaryChoiceHuman" class="summary-choice-btn">Human read</button>
-          <button type="button" id="summaryChoiceAi" class="summary-choice-btn">AI read</button>
-        </div>
-        <p class="summary-choice-hint">Human read: optional API polish for meeting notes.<br>AI read: basic summary only.</p>
-      </div>
+    <div class="summary-choice-modal" role="dialog" aria-labelledby="digestModalTitle">
+      <p class="summary-choice-title" id="digestModalTitle">Chat Digest</p>
+      <p class="summary-choice-hint" id="digestModalHint">Summarize builds an API-generated archive digest. Add your OpenAI key below (it stays on this device).</p>
       <div class="summary-choice-api-view" id="summaryChoiceApiView">
-        <p class="summary-choice-title">OpenAI API key (optional, for Summary polish)</p>
+        <p class="summary-choice-title">OpenAI API key</p>
         <input type="password" id="openaiKey" placeholder="sk-..." autocomplete="off" class="summary-choice-api-input" />
         <button type="button" id="summaryChoiceTutorialToggle" class="summary-choice-tutorial-trigger" aria-expanded="false" aria-controls="summaryChoiceTutorialBody">
           <span class="summary-choice-tutorial-chevron" id="summaryChoiceTutorialChevron">▶</span>
@@ -92,10 +90,11 @@
         </div>
         <p class="summary-choice-api-status" id="summaryChoiceApiStatus" aria-live="polite"></p>
         <button type="button" id="summaryChoiceApiDone" class="summary-choice-btn summary-choice-api-done">Done</button>
+        <button type="button" id="summaryChoiceRunDigestBtn" class="summary-choice-btn summary-choice-start-btn summary-choice-run-digest-btn" hidden>Generate Chat Digest</button>
       </div>
       <div class="summary-choice-ready-view" id="summaryChoiceReadyView">
-        <p class="summary-choice-ready-message" id="summaryChoiceReadyMessage">API key saved. Ready to generate.</p>
-        <button type="button" id="summaryChoiceStartHumanBtn" class="summary-choice-btn summary-choice-start-btn">Start summarize</button>
+        <p class="summary-choice-ready-message" id="summaryChoiceReadyMessage">API key saved. Ready to generate your Chat Digest.</p>
+        <button type="button" id="summaryChoiceStartHumanBtn" class="summary-choice-btn summary-choice-start-btn">Generate Chat Digest</button>
       </div>
     </div>
   </div>
